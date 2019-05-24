@@ -1,0 +1,46 @@
+Classfile /home/nm/workspace/min-jvm/First.class
+  Last modified May 21, 2019; size 257 bytes
+  MD5 checksum b30a6ef9cc2176273a581386f7dfcb6a
+  Compiled from "First.java"
+class First
+  minor version: 0
+  major version: 52
+  flags: ACC_SUPER
+Constant pool:
+   #1 = Methodref          #3.#12         // java/lang/Object."<init>":()V
+   #2 = Class              #13            // First
+   #3 = Class              #14            // java/lang/Object
+   #4 = Utf8               <init>
+   #5 = Utf8               ()V
+   #6 = Utf8               Code
+   #7 = Utf8               LineNumberTable
+   #8 = Utf8               main
+   #9 = Utf8               ([Ljava/lang/String;)I
+  #10 = Utf8               SourceFile
+  #11 = Utf8               First.java
+  #12 = NameAndType        #4:#5          // "<init>":()V
+  #13 = Utf8               First
+  #14 = Utf8               java/lang/Object
+{
+  First();
+    descriptor: ()V
+    flags:
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 1: 0
+
+  public static int main(java.lang.String[]);
+    descriptor: ([Ljava/lang/String;)I
+    flags: ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: bipush        42
+         2: ireturn
+      LineNumberTable:
+        line 3: 0
+}
+SourceFile: "First.java"
