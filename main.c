@@ -103,7 +103,7 @@ struct method_info {
 struct attribute_info {
     u_int16_t attribute_name_index;
     u_int32_t attribute_length;
-    void *info;
+    void *info; // structure depends on attributes
 };
 
 // Predefined class file attributes (from Table 4.7-A, B, and C)
@@ -132,7 +132,7 @@ struct code_attribute {
     struct attribute_info **attributes;
 };
 
-#define ATTR_CODE_INFO(attr) ((struct code_attribute *) attr->info)
+#define ATTR_CODE_INFO(attr) ((struct code_attribute *) attr)
 /*
 #define ATTR_CODE_MAX_STACK(attr) (((struct code_attribute *) attr->info)->max_stack)
 #define ATTR_CODE_MAX_LOCALS(attr) (((struct code_attribute *) attr->info)->max_locals)
@@ -164,7 +164,7 @@ struct line_number_table_attribute {
     struct line_number_table_entry *line_number_table;
 };
 
-#define ATTR_LINE_NUMBER_TABLE_INFO(attr) ((struct line_number_table_attribute *) attr->info)
+#define ATTR_LINE_NUMBER_TABLE_INFO(attr) ((struct line_number_table_attribute *) attr)
 
 // 4.1 The ClassFile Structure
 struct class_file {
@@ -306,30 +306,33 @@ int parse_attribute(struct attribute_info **attr, struct class_file *main_class,
     attr_name_index = read16(main_file);
     attr_length = read32(main_file);
 
-    *attr = (struct attribute_info *) malloc(sizeof(u_int16_t) + sizeof(u_int32_t) + attr_length);
-    (*attr)->attribute_name_index = attr_name_index;
-    (*attr)->attribute_length = attr_length;
-    (*attr)->info = malloc(attr_length);
-
     cp = (struct constant_utf8_info *) main_class->constant_pool[attr_name_index-1];
     attr_len = read_utf8(attr_name, cp);
     if (attr_len < 0) {
         return -1;
     }
     if (strncmp(attr_name, ATTR_CODE, attr_len) == 0) {
+        *attr = (struct attribute_info *) malloc(sizeof(struct code_attribute));
+        (*attr)->attribute_name_index = attr_name_index;
+        (*attr)->attribute_length = attr_length;
+
         ATTR_CODE_INFO((*attr))->max_stack = read16(main_file);
         ATTR_CODE_INFO((*attr))->max_locals = read16(main_file);
 
         // code
         ATTR_CODE_INFO((*attr))->code_length = read32(main_file);
-        ATTR_CODE_INFO((*attr))->code = (u_int8_t *) malloc(ATTR_CODE_INFO((*attr))->code_length);
+        if (ATTR_CODE_INFO((*attr))->code_length > 0) {
+            ATTR_CODE_INFO((*attr))->code = (u_int8_t *) malloc(ATTR_CODE_INFO((*attr))->code_length);
+        }
         readn((ATTR_CODE_INFO((*attr)))->code, ATTR_CODE_INFO((*attr))->code_length, main_file);
 
         // exception_table
         ATTR_CODE_INFO((*attr))->exception_table_length = read16(main_file);
-        ATTR_CODE_INFO((*attr))->exception_table = calloc(
-                ATTR_CODE_INFO((*attr))->exception_table_length,
-                sizeof(struct exception_table_entry));
+        if (ATTR_CODE_INFO((*attr))->exception_table_length > 0) {
+            ATTR_CODE_INFO((*attr))->exception_table = calloc(
+                    ATTR_CODE_INFO((*attr))->exception_table_length,
+                    sizeof(struct exception_table_entry));
+        }
         for (i = 0; i < ATTR_CODE_INFO((*attr))->exception_table_length; i++) {
             ATTR_CODE_INFO((*attr))->exception_table[i].start_pc = read16(main_file);
             ATTR_CODE_INFO((*attr))->exception_table[i].end_pc = read16(main_file);
@@ -339,9 +342,15 @@ int parse_attribute(struct attribute_info **attr, struct class_file *main_class,
 
         // attributes
         ATTR_CODE_INFO((*attr))->attributes_count = read16(main_file);
-        ATTR_CODE_INFO((*attr))->attributes = calloc(
-                ATTR_CODE_INFO((*attr))->attributes_count,
-                sizeof(void *));
+        if (ATTR_CODE_INFO((*attr))->attributes_count > 0) {
+            /*
+            ATTR_CODE_INFO((*attr))->attributes = malloc(
+                    ATTR_CODE_INFO((*attr))->attributes_count * sizeof(void *));
+             */
+            ATTR_CODE_INFO((*attr))->attributes = (struct attribute_info **) calloc(
+                    ATTR_CODE_INFO((*attr))->attributes_count,
+                    sizeof(void *));
+        }
         for (i = 0; i < ATTR_CODE_INFO((*attr))->attributes_count; i++) {
             if (parse_attribute(&ATTR_CODE_INFO((*attr))->attributes[i], main_class, main_file) != 0) {
                 return -1;
@@ -350,9 +359,17 @@ int parse_attribute(struct attribute_info **attr, struct class_file *main_class,
 
         return 0;
     } else if (strncmp(attr_name, ATTR_SOURCE_FILE, attr_len) == 0) {
+        *attr = (struct attribute_info *) malloc(sizeof(struct source_file_attribute));
+        (*attr)->attribute_name_index = attr_name_index;
+        (*attr)->attribute_length = attr_length;
+
         ((struct source_file_attribute *) (*attr)->info)->sourcefile_index = read16(main_file);
         return 0;
     } else if (strncmp(attr_name, ATTR_LINE_NUMBER_TABLE, attr_len) == 0) {
+        *attr = (struct attribute_info *) malloc(sizeof(struct line_number_table_attribute));
+        (*attr)->attribute_name_index = attr_name_index;
+        (*attr)->attribute_length = attr_length;
+
         ATTR_LINE_NUMBER_TABLE_INFO((*attr))->line_number_table_length = read16(main_file);
         ATTR_LINE_NUMBER_TABLE_INFO((*attr))->line_number_table = calloc(
                 ATTR_LINE_NUMBER_TABLE_INFO((*attr))->line_number_table_length,
