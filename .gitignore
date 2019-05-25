@@ -1,3 +1,7 @@
+*.a
+*.cbp
+*.tcl
+
 cmake-build-debug/
 CMakeCache.txt
 CMakeFiles/
@@ -5,3 +9,5 @@ Makefile
 cmake_install.cmake
 CTestTestfile.cmake
 Testing/
+
+test_*

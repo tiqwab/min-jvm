@@ -1,5 +1,5 @@
 #include <stdlib.h>
-#include "main.h"
+#include "../main.h"
 
 int main(int argc, char *argv[]) {
     FILE *main_file;
