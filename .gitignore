@@ -9,5 +9,6 @@ Makefile
 cmake_install.cmake
 CTestTestfile.cmake
 Testing/
+/build/
 
 test_*

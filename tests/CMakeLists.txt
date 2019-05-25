@@ -10,3 +10,9 @@ foreach(name IN ITEMS
     add_min_jvm_executable(${name})
     add_test(NAME test_${name} COMMAND $<TARGET_FILE:test_${name}>)
 endforeach()
+
+foreach(name IN ITEMS
+        First.class
+        )
+    configure_file(${name} . COPYONLY)
+endforeach()
