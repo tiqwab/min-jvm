@@ -68,7 +68,7 @@ int read_utf8(char *str, struct constant_utf8_info *cp) {
         str[i] = cp->bytes[i];
     }
     str[i] = '\0';
-    return i-1;
+    return i;
 }
 
 // 4.5 Fields
@@ -520,9 +520,67 @@ int parse_class(struct class_file *main_class, FILE *main_file) {
     return 0;
 }
 
+/**
+ * Find code_attribute from constant_pool.
+ * Return index of constant_pool or -1 if not found.
+ */
+int find_method(struct method_info **method, struct code_attribute **code, char *name, struct class_file *class) {
+    // TODO: Check method signature as well as name
+    int i, j;
+    u_int16_t name_index, attr_name_index;
+    u_int8_t tag;
+    char buf[1024]; // TODO: should not limit the length of methods
+    int len;
+    int name_len;
+
+    name_len = strlen(name);
+    for (i = 0; i < class->methods_count; i++) {
+        name_index = class->methods[i]->name_index;
+        tag = class->constant_pool[name_index-1]->tag;
+        if (tag == CONSTANT_UTF8) {
+            len = read_utf8(buf, (struct constant_utf8_info *) class->constant_pool[name_index-1]);
+            if (name_len == len && strncmp(buf, name, len) == 0) {
+                *method = (struct method_info *) class->methods[i];
+                for (j = 0; j < (*method)->attributes_count; j++) {
+                    attr_name_index = (*method)->attributes[j]->attribute_name_index;
+                    len = read_utf8(buf, (struct constant_utf8_info *) class->constant_pool[attr_name_index-1]);
+                    if (strncmp(buf, ATTR_CODE, 4) == 0) {
+                        *code = (struct code_attribute *) (*method)->attributes[j];
+                        return i;
+                    }
+                }
+            }
+        }
+    }
+    return -1;
+}
+
+int exec_method(struct method_info *method, struct code_attribute *code) {
+    u_int8_t *p = code->code;
+    u_int16_t code_len = code->code_length;
+    int operand;
+
+    while (p < code->code + code_len) {
+        if (*p == 0x10) {
+            p++;
+            operand = (int) *p++;
+            printf("bipush %d\n", operand);
+        } else if (*p == 0xac) {
+            p++;
+            printf("ireturn %d\n", operand);
+            return operand;
+        }
+    }
+
+    return operand;
+}
+
 int main(int argc, char *argv[]) {
     FILE *main_file;
     struct class_file main_class;
+    struct method_info *method;
+    struct code_attribute *code;
+    int retval;
 
     if (argc != 2) {
         fprintf(stderr, "usage: min_jvm <main_class>");
@@ -537,10 +595,19 @@ int main(int argc, char *argv[]) {
 
     parse_class(&main_class, main_file);
 
+    // TODO should exec <init> here?
+
+    if (find_method(&method, &code, "main", &main_class) < 0) {
+        fprintf(stderr, "not found method: %s\n", "main");
+        return 1;
+    }
+
+    retval = exec_method(method, code);
+
     if (fclose(main_file) != 0) {
         perror("fclose");
         exit(1);
     }
 
-    return 0;
+    return retval;
 }
