@@ -363,7 +363,7 @@ int parse_attribute(struct attribute_info **attr, struct class_file *main_class,
         (*attr)->attribute_name_index = attr_name_index;
         (*attr)->attribute_length = attr_length;
 
-        ((struct source_file_attribute *) (*attr)->info)->sourcefile_index = read16(main_file);
+        ((struct source_file_attribute *) (*attr))->sourcefile_index = read16(main_file);
         return 0;
     } else if (strncmp(attr_name, ATTR_LINE_NUMBER_TABLE, attr_len) == 0) {
         *attr = (struct attribute_info *) malloc(sizeof(struct line_number_table_attribute));
@@ -497,6 +497,22 @@ int parse_class(struct class_file *main_class, FILE *main_file) {
     }
     for (i = 0; i < main_class->methods_count; i++) {
         if (parse_method(&main_class->methods[i], main_class, main_file) != 0) {
+            return -1;
+        }
+    }
+
+    // parse attributes_count
+    main_class->attributes_count = read16(main_file);
+    printf("attributes_count: %d\n", main_class->attributes_count);
+
+    // parse attributes
+    main_class->attributes = calloc(main_class->attributes_count, sizeof(void *));
+    if (main_class->attributes == NULL) {
+        fprintf(stderr, "failed to prepare methods\n");
+        return -1;
+    }
+    for (i = 0; i < main_class->attributes_count; i++) {
+        if (parse_attribute(&main_class->attributes[i], main_class, main_file) != 0) {
             return -1;
         }
     }
