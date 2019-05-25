@@ -1,5 +1,5 @@
 ```
 $ cmake .
 $ make
-$ ctest
+$ ctest # `--verbose` to see output too
 ```
