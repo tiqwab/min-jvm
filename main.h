@@ -162,13 +162,6 @@ struct class_file {
     struct attribute_info **attributes;
 };
 
-struct frame {
-    u_int16_t max_stack;
-    u_int32_t *stack;
-    u_int16_t max_locals;
-    u_int32_t *locals;
-};
-
 int parse_class(struct class_file *main_class, FILE *main_file);
 
 struct method_info *find_method(char *target_name, struct class_file *class);
@@ -179,9 +172,21 @@ struct code_attribute *get_code(struct method_info *method, struct class_file *c
 // Frame
 //
 
+struct frame {
+    u_int16_t max_stack;
+    int stack_i;
+    u_int32_t *stack;
+    u_int16_t max_locals;
+    u_int32_t *locals;
+};
+
 struct frame *initialize_frame(int max_stack, int max_locals);
 
 void free_frame(struct frame *frame);
+
+int push_item_frame(int32_t item, struct frame *frame);
+
+int pop_item_frame(int32_t *item, struct frame *frame);
 
 //
 // Invoke method

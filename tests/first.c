@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "failed to exec main\n");
         return 1;
     }
-    retval = (u_int32_t) frame->stack[0];
+    pop_item_frame((int32_t *) &retval, frame);
 
     if (fclose(main_file) != 0) {
         perror("fclose");

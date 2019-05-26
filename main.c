@@ -520,6 +520,7 @@ struct frame *initialize_frame(int max_stack, int max_locals) {
         return NULL;
     }
     f->max_stack = max_stack;
+    f->stack_i = 0;
     f->stack = (u_int32_t *) calloc(max_stack, sizeof(u_int32_t));
     if (max_stack > 0 && f->stack == NULL) {
         free(f);
@@ -541,6 +542,24 @@ void free_frame(struct frame *frame) {
     free(frame->stack);
     free(frame->locals);
     free(frame);
+}
+
+int push_item_frame(int32_t item, struct frame *frame) {
+    if (frame->stack_i >= frame->max_stack) {
+        return -1;
+    }
+    frame->stack[frame->stack_i] = item;
+    frame->stack_i++;
+    return 0;
+}
+
+int pop_item_frame(int32_t *item, struct frame *frame) {
+    if (frame->stack_i == 0) {
+        return -1;
+    }
+    frame->stack_i--;
+    *item = frame->stack[frame->stack_i];
+    return 0;
 }
 
 int exec_method(struct method_info *method, struct code_attribute *code, struct frame *prev_frame, struct class_file *class) {
@@ -565,23 +584,28 @@ int exec_method(struct method_info *method, struct code_attribute *code, struct 
         if (*p == 0x10) {
             // bipush
             p++;
-            current_frame->stack[0] = (u_int32_t) *p;
+            printf("bipush %d\n", (int32_t) *p);
+            push_item_frame((int32_t) *p, current_frame);
             p++;
-            printf("bipush %d\n", current_frame->stack[0]);
         } else if (*p == 0x1b) {
             // iload_1
+            // push value to stack from local 1
             p++;
-            current_frame->stack[0] = current_frame->locals[1];
+            printf("iload_1\n");
+            push_item_frame((int32_t) current_frame->locals[1], current_frame);
         } else if (*p == 0x3c) {
             // istore_1
+            // pop value from stack and store it in local 1
             p++;
-            current_frame->locals[1] = current_frame->stack[0];
+            printf("istore_1\n");
+            pop_item_frame((int32_t *) &current_frame->locals[1], current_frame);
         } else if (*p == 0xac) {
             // ireturn
             // pop value from the current frame and push to the invoker frame
             p++;
-            prev_frame->stack[0] = (u_int32_t) current_frame->stack[0];
-            printf("ireturn %d\n", prev_frame->stack[0]);
+            pop_item_frame((int32_t *) &operand, current_frame);
+            printf("ireturn %d\n", operand);
+            push_item_frame((int32_t) operand, prev_frame);
             return 0;
         } else if (*p == 0xb8) {
             // invokestatic
