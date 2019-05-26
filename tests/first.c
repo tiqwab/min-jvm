@@ -6,6 +6,7 @@ int main(int argc, char *argv[]) {
     struct class_file main_class;
     struct method_info *method;
     struct code_attribute *code;
+    struct frame *frame;
     int retval;
 
     main_file = fopen("First.class", "r");
@@ -30,7 +31,12 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    retval = exec_method(method, code, &main_class);
+    frame = initialize_frame(1, 0);
+    if (exec_method(method, code, frame, &main_class) != 0) {
+        fprintf(stderr, "failed to exec main\n");
+        return 1;
+    }
+    retval = (u_int32_t) frame->stack[0];
 
     if (fclose(main_file) != 0) {
         perror("fclose");

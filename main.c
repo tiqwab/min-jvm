@@ -510,7 +510,40 @@ static struct constant_utf8_info *find_cp_utf8(int index, struct class_file *cla
     return (struct constant_utf8_info *) cp_info;
 }
 
-int exec_method(struct method_info *method, struct code_attribute *code, struct class_file *class) {
+/**
+ * Allocate and initialize frame.
+ * Return NULL if failed to initialize.
+ */
+struct frame *initialize_frame(int max_stack, int max_locals) {
+    struct frame *f = (struct frame *) malloc(sizeof(struct frame));
+    if (f == NULL) {
+        return NULL;
+    }
+    f->max_stack = max_stack;
+    f->stack = (u_int32_t *) calloc(max_stack, sizeof(u_int32_t));
+    if (max_stack > 0 && f->stack == NULL) {
+        free(f);
+        return NULL;
+    }
+    f->max_locals = max_locals;
+    f->locals = (u_int32_t *) calloc(max_locals, sizeof(u_int32_t));
+    if (max_locals > 0 && f->locals == NULL) {
+        free(f);
+        return NULL;
+    }
+    return f;
+}
+
+/**
+ * Free allocated frame.
+ */
+void free_frame(struct frame *frame) {
+    free(frame->stack);
+    free(frame->locals);
+    free(frame);
+}
+
+int exec_method(struct method_info *method, struct code_attribute *code, struct frame *prev_frame, struct class_file *class) {
     u_int8_t *p = code->code;
     u_int16_t code_len = code->code_length;
     int operand;
@@ -522,16 +555,36 @@ int exec_method(struct method_info *method, struct code_attribute *code, struct 
     struct method_info *method2;
     struct code_attribute *code2;
 
+    struct frame *current_frame = initialize_frame(code->max_stack, code->max_locals);
+    if (current_frame == NULL) {
+        fprintf(stderr, "failed to prepare frame\n");
+        return -1;
+    }
+
     while (p < code->code + code_len) {
         if (*p == 0x10) {
+            // bipush
             p++;
-            operand = (int) *p++;
-            printf("bipush %d\n", operand);
+            current_frame->stack[0] = (u_int32_t) *p;
+            p++;
+            printf("bipush %d\n", current_frame->stack[0]);
+        } else if (*p == 0x1b) {
+            // iload_1
+            p++;
+            current_frame->stack[0] = current_frame->locals[1];
+        } else if (*p == 0x3c) {
+            // istore_1
+            p++;
+            current_frame->locals[1] = current_frame->stack[0];
         } else if (*p == 0xac) {
+            // ireturn
+            // pop value from the current frame and push to the invoker frame
             p++;
-            printf("ireturn %d\n", operand);
-            return operand;
+            prev_frame->stack[0] = (u_int32_t) current_frame->stack[0];
+            printf("ireturn %d\n", prev_frame->stack[0]);
+            return 0;
         } else if (*p == 0xb8) {
+            // invokestatic
             p++;
             operand = *p; p++;
             operand = (operand << 8) | *p; p++;
@@ -575,12 +628,13 @@ int exec_method(struct method_info *method, struct code_attribute *code, struct 
                 return -1;
             }
 
-            return exec_method(method2, code2, class);
+            exec_method(method2, code2, current_frame, class);
         } else {
             fprintf(stderr, "unknown inst\n");
             return -1;
         }
     }
 
-    return operand;
+    free_frame(current_frame);
+    return 0;
 }

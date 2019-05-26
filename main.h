@@ -162,12 +162,31 @@ struct class_file {
     struct attribute_info **attributes;
 };
 
+struct frame {
+    u_int16_t max_stack;
+    u_int32_t *stack;
+    u_int16_t max_locals;
+    u_int32_t *locals;
+};
+
 int parse_class(struct class_file *main_class, FILE *main_file);
 
 struct method_info *find_method(char *target_name, struct class_file *class);
 
 struct code_attribute *get_code(struct method_info *method, struct class_file *class);
 
-int exec_method(struct method_info *method, struct code_attribute *code, struct class_file *class);
+//
+// Frame
+//
+
+struct frame *initialize_frame(int max_stack, int max_locals);
+
+void free_frame(struct frame *frame);
+
+//
+// Invoke method
+//
+
+int exec_method(struct method_info *method, struct code_attribute *code, struct frame *prev_frame, struct class_file *class);
 
 #endif //MIN_JVM_MAIN_H
