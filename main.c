@@ -2,6 +2,13 @@
 #include <string.h>
 #include "main.h"
 
+static char *get_method_name(struct method_info *method, struct class_file *class);
+
+static struct constant_methodref_info *find_cp_methodref(int index, struct class_file *class);
+static struct constant_class_info *find_cp_class(int index, struct class_file *class);
+static struct constant_name_and_type_info *find_cp_name_and_type(int index, struct class_file *class);
+static struct constant_utf8_info *find_cp_utf8(int index, struct class_file *class);
+
 /**
  * Return length of str.
  * The format is described in 4.4.7 The CONSTANT_Utf8_info Structure
@@ -356,44 +363,164 @@ int parse_class(struct class_file *main_class, FILE *main_file) {
 }
 
 /**
- * Find code_attribute from constant_pool.
- * Return index of constant_pool or -1 if not found.
+ * Find method_info from methods.
+ * Return NULL if not found.
  */
-int find_method(struct method_info **method, struct code_attribute **code, char *name, struct class_file *class) {
+struct method_info *find_method(char *target_name, struct class_file *class) {
     // TODO: Check method signature as well as name
-    int i, j;
-    u_int16_t name_index, attr_name_index;
-    u_int8_t tag;
-    char buf[1024]; // TODO: should not limit the length of methods
-    int len;
+    int i;
+    int target_name_len;
+    char *name;
     int name_len;
 
-    name_len = strlen(name);
+    target_name_len = strlen(target_name);
     for (i = 0; i < class->methods_count; i++) {
-        name_index = class->methods[i]->name_index;
-        tag = class->constant_pool[name_index-1]->tag;
-        if (tag == CONSTANT_UTF8) {
-            len = read_utf8(buf, (struct constant_utf8_info *) class->constant_pool[name_index-1]);
-            if (name_len == len && strncmp(buf, name, len) == 0) {
-                *method = (struct method_info *) class->methods[i];
-                for (j = 0; j < (*method)->attributes_count; j++) {
-                    attr_name_index = (*method)->attributes[j]->attribute_name_index;
-                    len = read_utf8(buf, (struct constant_utf8_info *) class->constant_pool[attr_name_index-1]);
-                    if (strncmp(buf, ATTR_CODE, 4) == 0) {
-                        *code = (struct code_attribute *) (*method)->attributes[j];
-                        return i;
-                    }
-                }
+        name = get_method_name(class->methods[i], class);
+        if (name != NULL) {
+            name_len = strlen(name);
+            if (target_name_len == name_len && strncmp(name, target_name, name_len) == 0) {
+                return (struct method_info *) class->methods[i];
             }
         }
     }
-    return -1;
+
+    return NULL;
 }
 
-int exec_method(struct method_info *method, struct code_attribute *code) {
+/**
+ * Return code_attribute of the passed method_info.
+ * Return NULL if not found.
+ */
+struct code_attribute *get_code(struct method_info *method, struct class_file *class) {
+    int j;
+    int attr_name_index;
+    char name[1024];
+
+    for (j = 0; j < method->attributes_count; j++) {
+        attr_name_index = method->attributes[j]->attribute_name_index;
+        read_utf8(name, (struct constant_utf8_info *) class->constant_pool[attr_name_index-1]);
+        if (strncmp(name, ATTR_CODE, 4) == 0) {
+            return (struct code_attribute *) method->attributes[j];
+        }
+    }
+
+    return NULL;
+}
+
+/**
+ * Return name of the method.
+ */
+static char *get_method_name(struct method_info *method, struct class_file *class) {
+    // TODO: not thread-safe
+    // TODO: should not limit the length of methods
+    static char name[1024];
+    u_int16_t name_index;
+    struct cp_info *cp_info;
+    struct constant_utf8_info *utf8_info;
+
+    name_index = method->name_index;
+    if (name_index > class->constant_pool_count) {
+        return NULL;
+    }
+
+    cp_info = class->constant_pool[name_index - 1];
+    if (cp_info->tag != CONSTANT_UTF8) {
+        return NULL;
+    }
+    utf8_info = (struct constant_utf8_info *) cp_info;
+
+    read_utf8(name, utf8_info);
+
+    return name;
+}
+
+/**
+ * Return constant_class_info at the specified index of constant pool.
+ * Return NULL if the item is not Class.
+ */
+static struct constant_class_info *find_cp_class(int index, struct class_file *class) {
+    struct cp_info *cp_info;
+
+    if (index > class->constant_pool_count) {
+        return NULL;
+    }
+
+    cp_info = class->constant_pool[index-1];
+    if (cp_info->tag != CONSTANT_CLASS) {
+        return NULL;
+    }
+
+    return (struct constant_class_info *) cp_info;
+}
+
+/**
+ * Return constant_methodref_info at the specified index of constant pool.
+ * Return NULL if the item is not Methodref.
+ */
+static struct constant_methodref_info *find_cp_methodref(int index, struct class_file *class) {
+    struct cp_info *cp_info;
+
+    if (index > class->constant_pool_count) {
+        return NULL;
+    }
+
+    cp_info = class->constant_pool[index-1];
+    if (cp_info->tag != CONSTANT_METHODREF) {
+        return NULL;
+    }
+
+    return (struct constant_methodref_info *) cp_info;
+}
+
+/**
+ * Return constant_name_and_type_info at the specified index of constant pool.
+ * Return NULL if the item is not NameAndType
+ */
+static struct constant_name_and_type_info *find_cp_name_and_type(int index, struct class_file *class) {
+    struct cp_info *cp_info;
+
+    if (index > class->constant_pool_count) {
+        return NULL;
+    }
+
+    cp_info = class->constant_pool[index-1];
+    if (cp_info->tag != CONSTANT_NAME_AND_TYPE) {
+        return NULL;
+    }
+
+    return (struct constant_name_and_type_info *) cp_info;
+}
+
+/**
+ * Return constant_utf8_info at the specified index of constant pool.
+ * Return NULL if the item is not Utf8.
+ */
+static struct constant_utf8_info *find_cp_utf8(int index, struct class_file *class) {
+    struct cp_info *cp_info;
+
+    if (index > class->constant_pool_count) {
+        return NULL;
+    }
+
+    cp_info = class->constant_pool[index-1];
+    if (cp_info->tag != CONSTANT_UTF8) {
+        return NULL;
+    }
+
+    return (struct constant_utf8_info *) cp_info;
+}
+
+int exec_method(struct method_info *method, struct code_attribute *code, struct class_file *class) {
     u_int8_t *p = code->code;
     u_int16_t code_len = code->code_length;
     int operand;
+    struct constant_methodref_info *cp_methodref;
+    struct constant_class_info *cp_class;
+    struct constant_name_and_type_info *cp_name_and_type;
+    struct constant_utf8_info *cp_utf8;
+    char buf[1024];
+    struct method_info *method2;
+    struct code_attribute *code2;
 
     while (p < code->code + code_len) {
         if (*p == 0x10) {
@@ -404,6 +531,54 @@ int exec_method(struct method_info *method, struct code_attribute *code) {
             p++;
             printf("ireturn %d\n", operand);
             return operand;
+        } else if (*p == 0xb8) {
+            p++;
+            operand = *p; p++;
+            operand = (operand << 8) | *p; p++;
+            printf("invokestatic %d\n", operand);
+
+            cp_methodref = find_cp_methodref(operand, class);
+            if (cp_methodref == NULL) {
+                fprintf(stderr, "Methodref is not found in constant pool\n");
+                return -1;
+            }
+
+            cp_class = find_cp_class(cp_methodref->class_index, class);
+            if (cp_class == NULL) {
+                fprintf(stderr, "Class is not found in constant pool\n");
+                return -1;
+            }
+
+            cp_name_and_type = find_cp_name_and_type(cp_methodref->name_and_type_index, class);
+            if (cp_name_and_type == NULL) {
+                fprintf(stderr, "NameAndType is not found in constant pool\n");
+                return -1;
+            }
+
+            cp_utf8 = find_cp_utf8(cp_name_and_type->name_index, class);
+            if (cp_utf8 == NULL) {
+                fprintf(stderr, "Utf8 is not found in constant pool\n");
+                return -1;
+            }
+
+            read_utf8(buf, cp_utf8);
+
+            method2 = find_method(buf, class);
+            if (method2 == NULL) {
+                fprintf(stderr, "not found method\n");
+                return -1;
+            }
+
+            code2 = get_code(method2, class);
+            if (code2 == NULL) {
+                fprintf(stderr, "not found code\n");
+                return -1;
+            }
+
+            return exec_method(method2, code2, class);
+        } else {
+            fprintf(stderr, "unknown inst\n");
+            return -1;
         }
     }
 

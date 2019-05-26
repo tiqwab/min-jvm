@@ -164,8 +164,10 @@ struct class_file {
 
 int parse_class(struct class_file *main_class, FILE *main_file);
 
-int find_method(struct method_info **method, struct code_attribute **code, char *name, struct class_file *class);
+struct method_info *find_method(char *target_name, struct class_file *class);
 
-int exec_method(struct method_info *method, struct code_attribute *code);
+struct code_attribute *get_code(struct method_info *method, struct class_file *class);
+
+int exec_method(struct method_info *method, struct code_attribute *code, struct class_file *class);
 
 #endif //MIN_JVM_MAIN_H

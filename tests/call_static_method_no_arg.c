@@ -8,7 +8,7 @@ int main(int argc, char *argv[]) {
     struct code_attribute *code;
     int retval;
 
-    main_file = fopen("First.class", "r");
+    main_file = fopen("CallStaticMethodNoArg.class", "r");
     if (main_file == NULL) {
         perror("fopen");
         exit(1);
