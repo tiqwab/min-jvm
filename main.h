@@ -194,4 +194,14 @@ int pop_item_frame(int32_t *item, struct frame *frame);
 
 int exec_method(struct method_info *method, struct code_attribute *code, struct frame *prev_frame, struct class_file *class);
 
+//
+// Run main class
+//
+
+/**
+ * Run program by specifying class name which has a main method.
+ * Return exit code.
+ */
+int run(char *class_name);
+
 #endif //MIN_JVM_MAIN_H
