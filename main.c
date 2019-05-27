@@ -688,6 +688,13 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
             pop_item_frame(&operand1, current_frame);
             printf("iadd: %d + %d\n", operand1, operand2);
             push_item_frame((int32_t) (operand1 + operand2), current_frame);
+        } else if (*p == 0x64) {
+            // isub
+            p++;
+            pop_item_frame(&operand2, current_frame);
+            pop_item_frame(&operand1, current_frame);
+            printf("isub: %d - %d\n", operand1, operand2);
+            push_item_frame((int32_t) (operand1 - operand2), current_frame);
         } else if (*p == 0x1a) {
             // iload_0
             p++;

@@ -17,7 +17,7 @@ For run hello world written in Java:
     - [x] where to store and load?
     - [x] implement push and pop
   - [x] inst: `iload_1`
-- [ ] call static methods with arguments
+- [x] call static methods with arguments
 - [ ] call static methods of other classes
 
 For run hello world written in Scala:
