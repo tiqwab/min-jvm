@@ -434,6 +434,75 @@ static char *get_method_name(struct method_info *method, struct class_file *clas
     return name;
 }
 
+struct method_descriptor {
+    int num;
+};
+
+/**
+ * Parse method descriptor and store it to descriptor.
+ * The format of method descriptor is defined in 4.3.3.
+ * Return 0 if success, return -1 otherwise.
+ */
+static int get_method_descriptor(struct method_descriptor *descriptor, struct method_info *current_method, struct class_file *class) {
+    char desc[1024], *p;
+    struct constant_utf8_info *utf8 = find_cp_utf8(current_method->descriptor_index, class);
+    read_utf8(desc, utf8);
+
+    descriptor->num = 0;
+
+    p = desc;
+    if (*p != '(') {
+        return -1;
+    }
+    p++;
+    while (*p != ')') {
+        switch(*p) {
+            case 'I':
+                descriptor->num++;
+                break;
+            case 'B':
+                fprintf(stderr, "not yet implemented for %c\n", *p);
+                return -1;
+            case 'C':
+                fprintf(stderr, "not yet implemented for %c\n", *p);
+                return -1;
+            case 'D':
+                fprintf(stderr, "not yet implemented for %c\n", *p);
+                return -1;
+            case 'F':
+                fprintf(stderr, "not yet implemented for %c\n", *p);
+                return -1;
+            case 'J':
+                fprintf(stderr, "not yet implemented for %c\n", *p);
+                return -1;
+            case 'L':
+                descriptor->num++;
+                while (*p != ';') {
+                    // skip for now
+                    p++;
+                }
+                break;
+            case 'S':
+                fprintf(stderr, "not yet implemented for %c\n", *p);
+                return -1;
+            case 'Z':
+                fprintf(stderr, "not yet implemented for %c\n", *p);
+                return -1;
+            case '[':
+                // ignore for now
+                break;
+            default:
+                fprintf(stderr, "unexpected character appears in method descriptor\n");
+                return -1;
+        }
+        p++;
+    }
+
+    // ignore ReturnDescriptor for now
+
+    return 0;
+}
+
 /**
  * Return constant_class_info at the specified index of constant pool.
  * Return NULL if the item is not Class.
@@ -521,13 +590,13 @@ struct frame *initialize_frame(int max_stack, int max_locals) {
     }
     f->max_stack = max_stack;
     f->stack_i = 0;
-    f->stack = (u_int32_t *) calloc(max_stack, sizeof(u_int32_t));
+    f->stack = (int32_t *) calloc(max_stack, sizeof(u_int32_t));
     if (max_stack > 0 && f->stack == NULL) {
         free(f);
         return NULL;
     }
     f->max_locals = max_locals;
-    f->locals = (u_int32_t *) calloc(max_locals, sizeof(u_int32_t));
+    f->locals = (int32_t *) calloc(max_locals, sizeof(u_int32_t));
     if (max_locals > 0 && f->locals == NULL) {
         free(f);
         return NULL;
@@ -562,10 +631,14 @@ int pop_item_frame(int32_t *item, struct frame *frame) {
     return 0;
 }
 
-int exec_method(struct method_info *method, struct code_attribute *code, struct frame *prev_frame, struct class_file *class) {
-    u_int8_t *p = code->code;
-    u_int16_t code_len = code->code_length;
-    int operand;
+int exec_method(struct method_info *current_method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *class) {
+    u_int8_t *p = current_code->code;
+    u_int16_t current_code_len = current_code->code_length;
+    struct method_descriptor current_descriptor;
+
+    int i;
+    int cp_index;
+    int operand1, operand2;
     struct constant_methodref_info *cp_methodref;
     struct constant_class_info *cp_class;
     struct constant_name_and_type_info *cp_name_and_type;
@@ -574,19 +647,52 @@ int exec_method(struct method_info *method, struct code_attribute *code, struct 
     struct method_info *method2;
     struct code_attribute *code2;
 
-    struct frame *current_frame = initialize_frame(code->max_stack, code->max_locals);
+    // prepare frame
+    struct frame *current_frame = initialize_frame(current_code->max_stack, current_code->max_locals);
     if (current_frame == NULL) {
         fprintf(stderr, "failed to prepare frame\n");
         return -1;
     }
 
-    while (p < code->code + code_len) {
-        if (*p == 0x10) {
+    if (get_method_descriptor(&current_descriptor, current_method, class) != 0) {
+        fprintf(stderr, "failed to get descriptor\n");
+        return -1;
+    }
+
+    for (i = current_descriptor.num; i > 0; i--) {
+        pop_item_frame(&current_frame->locals[i-1], prev_frame);
+    }
+
+    // interpret code
+    while (p < current_code->code + current_code_len) {
+        if (*p == 0x02) {
+            // iconst_m1
+            p++;
+            printf("iconst_m1\n");
+            push_item_frame(-1, current_frame);
+        } else if (*p == 0x04) {
+            // iconst_1
+            p++;
+            printf("iconst_1\n");
+            push_item_frame(1, current_frame);
+        } else if (*p == 0x10) {
             // bipush
             p++;
             printf("bipush %d\n", (int32_t) *p);
             push_item_frame((int32_t) *p, current_frame);
             p++;
+        } else if (*p == 0x60) {
+            // iadd
+            p++;
+            pop_item_frame(&operand2, current_frame);
+            pop_item_frame(&operand1, current_frame);
+            printf("iadd: %d + %d\n", operand1, operand2);
+            push_item_frame((int32_t) (operand1 + operand2), current_frame);
+        } else if (*p == 0x1a) {
+            // iload_0
+            p++;
+            printf("iload_0\n");
+            push_item_frame((int32_t) current_frame->locals[0], current_frame);
         } else if (*p == 0x1b) {
             // iload_1
             // push value to stack from local 1
@@ -603,18 +709,18 @@ int exec_method(struct method_info *method, struct code_attribute *code, struct 
             // ireturn
             // pop value from the current frame and push to the invoker frame
             p++;
-            pop_item_frame((int32_t *) &operand, current_frame);
-            printf("ireturn %d\n", operand);
-            push_item_frame((int32_t) operand, prev_frame);
+            pop_item_frame((int32_t *) &operand1, current_frame);
+            printf("ireturn %d\n", operand1);
+            push_item_frame((int32_t) operand1, prev_frame);
             return 0;
         } else if (*p == 0xb8) {
             // invokestatic
             p++;
-            operand = *p; p++;
-            operand = (operand << 8) | *p; p++;
-            printf("invokestatic %d\n", operand);
+            cp_index = *p; p++;
+            cp_index = (cp_index << 8) | *p; p++;
+            printf("invokestatic %d\n", cp_index);
 
-            cp_methodref = find_cp_methodref(operand, class);
+            cp_methodref = find_cp_methodref(cp_index, class);
             if (cp_methodref == NULL) {
                 fprintf(stderr, "Methodref is not found in constant pool\n");
                 return -1;
@@ -637,7 +743,6 @@ int exec_method(struct method_info *method, struct code_attribute *code, struct 
                 fprintf(stderr, "Utf8 is not found in constant pool\n");
                 return -1;
             }
-
             read_utf8(buf, cp_utf8);
 
             method2 = find_method(buf, class);
@@ -652,7 +757,10 @@ int exec_method(struct method_info *method, struct code_attribute *code, struct 
                 return -1;
             }
 
-            exec_method(method2, code2, current_frame, class);
+            if (exec_method(method2, code2, current_frame, class) != 0) {
+                fprintf(stderr, "unexpected error while call method\n");
+                return -1;
+            }
         } else {
             fprintf(stderr, "unknown inst\n");
             return -1;

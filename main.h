@@ -175,9 +175,9 @@ struct code_attribute *get_code(struct method_info *method, struct class_file *c
 struct frame {
     u_int16_t max_stack;
     int stack_i;
-    u_int32_t *stack;
+    int32_t *stack;
     u_int16_t max_locals;
-    u_int32_t *locals;
+    int32_t *locals;
 };
 
 struct frame *initialize_frame(int max_stack, int max_locals);
@@ -192,7 +192,7 @@ int pop_item_frame(int32_t *item, struct frame *frame);
 // Invoke method
 //
 
-int exec_method(struct method_info *method, struct code_attribute *code, struct frame *prev_frame, struct class_file *class);
+int exec_method(struct method_info *method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *class);
 
 //
 // Run main class

@@ -21,3 +21,8 @@ For run hello world written in Java:
 - [ ] call static methods of other classes
 
 For run hello world written in Scala:
+
+Others:
+
+- [ ] Handle other types of method descriptor than Int (4.3.3)
+- [ ] Handle ReturnDescriptor (4.3.3)

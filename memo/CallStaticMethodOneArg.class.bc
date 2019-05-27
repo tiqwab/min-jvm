@@ -1,0 +1,66 @@
+Classfile /home/nm/workspace/java/sample/CallStaticMethodOneArg.class
+  Last modified May 26, 2019; size 369 bytes
+  MD5 checksum 03c5009c162a94910b1049ed2881e899
+  Compiled from "CallStaticMethodOneArg.java"
+class CallStaticMethodOneArg
+  minor version: 0
+  major version: 52
+  flags: ACC_SUPER
+Constant pool:
+   #1 = Methodref          #4.#15         // java/lang/Object."<init>":()V
+   #2 = Methodref          #3.#16         // CallStaticMethodOneArg.plusOne:(I)I
+   #3 = Class              #17            // CallStaticMethodOneArg
+   #4 = Class              #18            // java/lang/Object
+   #5 = Utf8               <init>
+   #6 = Utf8               ()V
+   #7 = Utf8               Code
+   #8 = Utf8               LineNumberTable
+   #9 = Utf8               plusOne
+  #10 = Utf8               (I)I
+  #11 = Utf8               main
+  #12 = Utf8               ([Ljava/lang/String;)I
+  #13 = Utf8               SourceFile
+  #14 = Utf8               CallStaticMethodOneArg.java
+  #15 = NameAndType        #5:#6          // "<init>":()V
+  #16 = NameAndType        #9:#10         // plusOne:(I)I
+  #17 = Utf8               CallStaticMethodOneArg
+  #18 = Utf8               java/lang/Object
+{
+  CallStaticMethodOneArg();
+    descriptor: ()V
+    flags:
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 1: 0
+
+  public static int plusOne(int);
+    descriptor: (I)I
+    flags: ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=2, locals=1, args_size=1
+         0: iload_0
+         1: iconst_1
+         2: iadd
+         3: ireturn
+      LineNumberTable:
+        line 3: 0
+
+  public static int main(java.lang.String[]);
+    descriptor: ([Ljava/lang/String;)I
+    flags: ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=1, locals=2, args_size=1
+         0: bipush        42
+         2: invokestatic  #2                  // Method plusOne:(I)I
+         5: istore_1
+         6: iload_1
+         7: ireturn
+      LineNumberTable:
+        line 7: 0
+        line 8: 6
+}
+SourceFile: "CallStaticMethodOneArg.java"
