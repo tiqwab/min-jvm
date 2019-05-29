@@ -26,3 +26,8 @@ Others:
 
 - [ ] Handle other types of method descriptor than Int (4.3.3)
 - [ ] Handle ReturnDescriptor (4.3.3)
+- [ ] Exceptions
+  - e.g. NoClassDefFoundError (5.3)
+- [ ] Support Array
+- [ ] Support fields
+- [ ] Support instance methods

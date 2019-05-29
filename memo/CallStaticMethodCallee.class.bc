@@ -1,0 +1,46 @@
+Classfile /home/nm/workspace/java/sample/call-static-method-another-class/CallStaticMethodCallee.class
+  Last modified May 29, 2019; size 276 bytes
+  MD5 checksum 5b02d7647c4b7a3e862da262e269ebc6
+  Compiled from "CallStaticMethodCallee.java"
+class CallStaticMethodCallee
+  minor version: 0
+  major version: 52
+  flags: ACC_SUPER
+Constant pool:
+   #1 = Methodref          #3.#12         // java/lang/Object."<init>":()V
+   #2 = Class              #13            // CallStaticMethodCallee
+   #3 = Class              #14            // java/lang/Object
+   #4 = Utf8               <init>
+   #5 = Utf8               ()V
+   #6 = Utf8               Code
+   #7 = Utf8               LineNumberTable
+   #8 = Utf8               return46
+   #9 = Utf8               ()I
+  #10 = Utf8               SourceFile
+  #11 = Utf8               CallStaticMethodCallee.java
+  #12 = NameAndType        #4:#5          // "<init>":()V
+  #13 = Utf8               CallStaticMethodCallee
+  #14 = Utf8               java/lang/Object
+{
+  CallStaticMethodCallee();
+    descriptor: ()V
+    flags:
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 1: 0
+
+  public static int return46();
+    descriptor: ()I
+    flags: ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=1, locals=0, args_size=0
+         0: bipush        46
+         2: ireturn
+      LineNumberTable:
+        line 3: 0
+}
+SourceFile: "CallStaticMethodCallee.java"

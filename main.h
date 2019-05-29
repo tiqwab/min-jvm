@@ -202,6 +202,6 @@ int exec_method(struct method_info *method, struct code_attribute *current_code,
  * Run program by specifying class name which has a main method.
  * Return exit code.
  */
-int run(char *class_name);
+int run(char *class_name[], int len);
 
 #endif //MIN_JVM_MAIN_H

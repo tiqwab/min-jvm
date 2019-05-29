@@ -1,7 +1,8 @@
 #include "../main.h"
 
 int main(int argc, char *argv[]) {
-    int retval = run("CallStaticMethodTwoArg.class");
+    char *classes[1] = {"CallStaticMethodTwoArg.class"};
+    int retval = run(classes, 1);
 
     if (retval == 44) {
         return 0;

@@ -11,6 +11,7 @@ foreach(name IN ITEMS
         call_static_method_no_arg
         call_static_method_one_arg
         call_static_method_two_arg
+        call_static_method_other_class
         )
     add_min_jvm_executable(${name})
     add_test(NAME test_${name} COMMAND $<TARGET_FILE:test_${name}>)
@@ -21,6 +22,8 @@ foreach(name IN ITEMS
         CallStaticMethodNoArg.class
         CallStaticMethodOneArg.class
         CallStaticMethodTwoArg.class
+        CallStaticMethodCaller.class
+        CallStaticMethodCallee.class
         )
     configure_file(${name} . COPYONLY)
 endforeach()

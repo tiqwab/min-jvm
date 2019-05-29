@@ -1,7 +1,8 @@
 #include "../main.h"
 
 int main(int argc, char *argv[]) {
-    int retval = run("First.class");
+    char *classes[1] = {"First.class"};
+    int retval = run(classes, 1);
 
     if (retval == 42) {
         return 0;

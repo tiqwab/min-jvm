@@ -778,7 +778,7 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
     return 0;
 }
 
-int run(char *class_name) {
+int run(char *class_name[], int len) {
     FILE *main_file;
     struct class_file main_class;
     struct method_info *method;
@@ -786,7 +786,7 @@ int run(char *class_name) {
     struct frame *frame;
     int retval;
 
-    main_file = fopen(class_name, "r");
+    main_file = fopen(class_name[0], "r");
     if (main_file == NULL) {
         perror("fopen");
         return 1;
