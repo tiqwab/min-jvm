@@ -189,12 +189,6 @@ int push_item_frame(int32_t item, struct frame *frame);
 int pop_item_frame(int32_t *item, struct frame *frame);
 
 //
-// Invoke method
-//
-
-int exec_method(struct method_info *method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *class);
-
-//
 // Run main class
 //
 

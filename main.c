@@ -2,6 +2,7 @@
 #include <string.h>
 #include "main.h"
 
+static int read_utf8(char *str, struct constant_utf8_info *cp);
 static char *get_method_name(struct method_info *method, struct class_file *class);
 
 static struct constant_methodref_info *find_cp_methodref(int index, struct class_file *class);
@@ -9,11 +10,88 @@ static struct constant_class_info *find_cp_class(int index, struct class_file *c
 static struct constant_name_and_type_info *find_cp_name_and_type(int index, struct class_file *class);
 static struct constant_utf8_info *find_cp_utf8(int index, struct class_file *class);
 
+static struct constant_utf8_info *get_this_class(struct class_file *class);
+
+//
+// Class Loader
+//
+
+struct class_loader {
+    int class_num;
+    struct class_file *classes;
+};
+
+int initialize_class_loader(struct class_loader *loader, char *class_names[], int len) {
+    FILE *f;
+    int i;
+    struct class_file *class_files;
+
+    class_files = calloc(sizeof(struct class_file), len);
+    if (class_files == NULL) {
+        return -1;
+    }
+
+    for (i = 0; i < len; i++) {
+        f = fopen(class_names[i], "r");
+        if (f == NULL) {
+            perror("fopen");
+            return -1;
+        }
+
+        parse_class(&class_files[i], f);
+
+        // TODO should exec <init> here?
+
+        if (fclose(f) != 0) {
+            perror("fclose");
+            return -1;
+        }
+    }
+
+    loader->class_num = len;
+    loader->classes = class_files;
+    return 0;
+}
+
+/**
+ * Return class having the same name as specified one.
+ * Return NULL if not found.
+ */
+struct class_file *get_class(struct class_loader *loader, char *name) {
+    int i;
+    struct class_file *class;
+    struct constant_utf8_info *utf8;
+    char buf[1024];
+
+    for (i = 0; i < loader->class_num; i++) {
+        class = &loader->classes[i];
+        utf8 = get_this_class(class);
+        if (utf8 != NULL) {
+            read_utf8(buf, utf8);
+            if (strcmp(buf, name) == 0) {
+                return class;
+            }
+        }
+    }
+
+    return NULL;
+}
+
+int tear_down_class_loader(struct class_loader *loader) {
+    return 0;
+}
+
+//
+// Invoke method
+//
+
+int exec_method(struct method_info *method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader);
+
 /**
  * Return length of str.
  * The format is described in 4.4.7 The CONSTANT_Utf8_info Structure
  */
-int read_utf8(char *str, struct constant_utf8_info *cp) {
+static int read_utf8(char *str, struct constant_utf8_info *cp) {
     // TODO: current implementation cannot handle unicode higher than \u007F
     int i;
 
@@ -504,6 +582,19 @@ static int get_method_descriptor(struct method_descriptor *descriptor, struct me
 }
 
 /**
+ * Return this class name representing by constant_utf8_info.
+ * This should not return NULL.
+ */
+static struct constant_utf8_info *get_this_class(struct class_file *class) {
+    u_int16_t this_class_index = class->this_class;
+    struct constant_class_info *cp_class = find_cp_class(this_class_index, class);
+    if (cp_class == NULL) {
+        return NULL;
+    }
+    return find_cp_utf8(cp_class->name_index, class);
+}
+
+/**
  * Return constant_class_info at the specified index of constant pool.
  * Return NULL if the item is not Class.
  */
@@ -631,7 +722,7 @@ int pop_item_frame(int32_t *item, struct frame *frame) {
     return 0;
 }
 
-int exec_method(struct method_info *current_method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *class) {
+int exec_method(struct method_info *current_method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader) {
     u_int8_t *p = current_code->code;
     u_int16_t current_code_len = current_code->code_length;
     struct method_descriptor current_descriptor;
@@ -646,6 +737,7 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
     char buf[1024];
     struct method_info *method2;
     struct code_attribute *code2;
+    struct class_file *class2;
 
     // prepare frame
     struct frame *current_frame = initialize_frame(current_code->max_stack, current_code->max_locals);
@@ -654,7 +746,7 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
         return -1;
     }
 
-    if (get_method_descriptor(&current_descriptor, current_method, class) != 0) {
+    if (get_method_descriptor(&current_descriptor, current_method, current_class) != 0) {
         fprintf(stderr, "failed to get descriptor\n");
         return -1;
     }
@@ -727,44 +819,57 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
             cp_index = (cp_index << 8) | *p; p++;
             printf("invokestatic %d\n", cp_index);
 
-            cp_methodref = find_cp_methodref(cp_index, class);
+            cp_methodref = find_cp_methodref(cp_index, current_class);
             if (cp_methodref == NULL) {
                 fprintf(stderr, "Methodref is not found in constant pool\n");
                 return -1;
             }
 
-            cp_class = find_cp_class(cp_methodref->class_index, class);
+            cp_class = find_cp_class(cp_methodref->class_index, current_class);
             if (cp_class == NULL) {
                 fprintf(stderr, "Class is not found in constant pool\n");
                 return -1;
             }
 
-            cp_name_and_type = find_cp_name_and_type(cp_methodref->name_and_type_index, class);
+            // check class having method
+            cp_utf8 = find_cp_utf8(cp_class->name_index, current_class);
+            if (cp_utf8 == NULL) {
+                fprintf(stderr, "Utf8 is not found in constant pool\n");
+                return -1;
+            }
+            read_utf8(buf, cp_utf8);
+            class2 = get_class(loader, buf);
+            if (class2 == NULL) {
+                fprintf(stderr, "class not found: %s\n", buf);
+                return -1;
+            }
+
+            cp_name_and_type = find_cp_name_and_type(cp_methodref->name_and_type_index, current_class);
             if (cp_name_and_type == NULL) {
                 fprintf(stderr, "NameAndType is not found in constant pool\n");
                 return -1;
             }
 
-            cp_utf8 = find_cp_utf8(cp_name_and_type->name_index, class);
+            cp_utf8 = find_cp_utf8(cp_name_and_type->name_index, current_class);
             if (cp_utf8 == NULL) {
                 fprintf(stderr, "Utf8 is not found in constant pool\n");
                 return -1;
             }
             read_utf8(buf, cp_utf8);
 
-            method2 = find_method(buf, class);
+            method2 = find_method(buf, class2);
             if (method2 == NULL) {
-                fprintf(stderr, "not found method\n");
+                fprintf(stderr, "not found method: %s\n", buf);
                 return -1;
             }
 
-            code2 = get_code(method2, class);
+            code2 = get_code(method2, class2);
             if (code2 == NULL) {
                 fprintf(stderr, "not found code\n");
                 return -1;
             }
 
-            if (exec_method(method2, code2, current_frame, class) != 0) {
+            if (exec_method(method2, code2, current_frame, class2, loader) != 0) {
                 fprintf(stderr, "unexpected error while call method\n");
                 return -1;
             }
@@ -779,46 +884,61 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
 }
 
 int run(char *class_name[], int len) {
-    FILE *main_file;
-    struct class_file main_class;
+    char *main_class_name;
+    struct class_file *main_class;
+    struct class_loader loader;
     struct method_info *method;
     struct code_attribute *code;
     struct frame *frame;
     int retval;
+    char *c;
 
-    main_file = fopen(class_name[0], "r");
-    if (main_file == NULL) {
-        perror("fopen");
+    if (initialize_class_loader(&loader, class_name, len) < 0) {
+        fprintf(stderr, "failed to initiazlie class loader\n");
         return 1;
     }
 
-    parse_class(&main_class, main_file);
+    // Derive main class name without extension
+    // e.g. First.class -> First
+    main_class_name = malloc(strlen(class_name[0]) + 1);
+    if (main_class_name == NULL) {
+        fprintf(stderr, "failed to malloc\n");
+        return 1;
+    }
+    strcpy(main_class_name, class_name[0]);
+    c = strchr(main_class_name, '.');
+    if (c == NULL) {
+        fprintf(stderr, "failed to get main class name\n");
+        return 1;
+    }
+    *c = '\0';
 
-    // TODO should exec <init> here?
+    main_class = get_class(&loader, main_class_name);
+    if (main_class == NULL) {
+        fprintf(stderr, "not found class: %s\n", main_class_name);
+        return 1;
+    }
 
-    method = find_method("main", &main_class);
+    method = find_method("main", main_class);
     if (method == NULL) {
         fprintf(stderr, "not found method: %s\n", "main");
         return 1;
     }
 
-    code = get_code(method, &main_class);
+    code = get_code(method, main_class);
     if (code == NULL) {
         fprintf(stderr, "not found code of method: %s\n", "main");
         return 1;
     }
 
     frame = initialize_frame(1, 0);
-    if (exec_method(method, code, frame, &main_class) != 0) {
+    if (exec_method(method, code, frame, main_class, &loader) != 0) {
         fprintf(stderr, "failed to exec main\n");
         return 1;
     }
     pop_item_frame((int32_t *) &retval, frame);
 
-    if (fclose(main_file) != 0) {
-        perror("fclose");
-        return 1;
-    }
+    tear_down_class_loader(&loader);
 
     return retval;
 }
