@@ -18,7 +18,7 @@ For run hello world written in Java:
     - [x] implement push and pop
   - [x] inst: `iload_1`
 - [x] call static methods with arguments
-- [ ] call static methods of other classes
+- [x] call static methods of other classes
 
 For run hello world written in Scala:
 
