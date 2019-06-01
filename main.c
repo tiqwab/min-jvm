@@ -956,7 +956,7 @@ static int exec_method(struct method_info *current_method, struct code_attribute
         } else if (*p == 0xb1) {
             // return
             p++;
-            printf("return");
+            printf("return\n");
         } else if (*p == 0xb2 || *p == 0xb3) {
             // 0xb2: getstatic
             // 0xb3: putstatic

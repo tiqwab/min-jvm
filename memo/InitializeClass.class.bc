@@ -1,0 +1,77 @@
+Classfile /home/nm/workspace/java/sample/InitializeClass.class
+  Last modified Jun 1, 2019; size 391 bytes
+  MD5 checksum 783897b404b38934d7d15e8b3fbd921a
+  Compiled from "InitializeClass.java"
+class InitializeClass
+  minor version: 0
+  major version: 52
+  flags: ACC_SUPER
+Constant pool:
+   #1 = Methodref          #4.#16         // java/lang/Object."<init>":()V
+   #2 = Fieldref           #3.#17         // InitializeClass.count:I
+   #3 = Class              #18            // InitializeClass
+   #4 = Class              #19            // java/lang/Object
+   #5 = Utf8               count
+   #6 = Utf8               I
+   #7 = Utf8               <init>
+   #8 = Utf8               ()V
+   #9 = Utf8               Code
+  #10 = Utf8               LineNumberTable
+  #11 = Utf8               main
+  #12 = Utf8               ([Ljava/lang/String;)I
+  #13 = Utf8               <clinit>
+  #14 = Utf8               SourceFile
+  #15 = Utf8               InitializeClass.java
+  #16 = NameAndType        #7:#8          // "<init>":()V
+  #17 = NameAndType        #5:#6          // count:I
+  #18 = Utf8               InitializeClass
+  #19 = Utf8               java/lang/Object
+{
+  public static int count;
+    descriptor: I
+    flags: ACC_PUBLIC, ACC_STATIC
+
+  InitializeClass();
+    descriptor: ()V
+    flags:
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 1: 0
+
+  public static int main(java.lang.String[]);
+    descriptor: ([Ljava/lang/String;)I
+    flags: ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=2, locals=1, args_size=1
+         0: getstatic     #2                  // Field count:I
+         3: iconst_1
+         4: iadd
+         5: putstatic     #2                  // Field count:I
+         8: getstatic     #2                  // Field count:I
+        11: ireturn
+      LineNumberTable:
+        line 9: 0
+        line 10: 8
+
+  static {};
+    descriptor: ()V
+    flags: ACC_STATIC
+    Code:
+      stack=2, locals=0, args_size=0
+         0: iconst_1
+         1: putstatic     #2                  // Field count:I
+         4: getstatic     #2                  // Field count:I
+         7: bipush        46
+         9: iadd
+        10: putstatic     #2                  // Field count:I
+        13: return
+      LineNumberTable:
+        line 2: 0
+        line 5: 4
+        line 6: 13
+}
+SourceFile: "InitializeClass.java"
