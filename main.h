@@ -36,6 +36,13 @@ struct constant_class_info {
     u_int16_t name_index;
 };
 
+// 4.4.2 The CONSTANT_Fieldref_info Structures (cp_info)
+struct constant_fieldref_info {
+    u_int8_t tag;
+    u_int16_t class_index;
+    u_int16_t name_and_type_index;
+};
+
 // 4.4.2 The CONSTANT_Methodref_info Structure (cp_info)
 struct constant_methodref_info {
     u_int8_t tag;
@@ -59,7 +66,14 @@ struct constant_utf8_info {
 
 // 4.5 Fields
 struct field_info {
-
+    u_int16_t access_flags;
+    u_int16_t name_index;
+    u_int16_t descriptor_index;
+    u_int16_t attributes_count;
+    struct attribute_info **attributes;
+    // TODO: this is not in the spec.
+    // TODO: cannot handle only int
+    int *data;
 };
 
 // 4.6 Methods
@@ -164,8 +178,6 @@ struct class_file {
 
 int parse_class(struct class_file *main_class, FILE *main_file);
 
-struct method_info *find_method(char *target_name, struct class_file *class);
-
 struct code_attribute *get_code(struct method_info *method, struct class_file *class);
 
 //
@@ -184,9 +196,9 @@ struct frame *initialize_frame(int max_stack, int max_locals);
 
 void free_frame(struct frame *frame);
 
-int push_item_frame(int32_t item, struct frame *frame);
+int push_operand_stack(int32_t item, struct frame *frame);
 
-int pop_item_frame(int32_t *item, struct frame *frame);
+int pop_operand_stack(int32_t *item, struct frame *frame);
 
 //
 // Run main class

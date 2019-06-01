@@ -5,10 +5,14 @@
 static int read_utf8(char *str, struct constant_utf8_info *cp);
 static char *get_method_name(struct method_info *method, struct class_file *class);
 
+static struct constant_fieldref_info *find_cp_fieldref(int index, struct class_file *class);
 static struct constant_methodref_info *find_cp_methodref(int index, struct class_file *class);
 static struct constant_class_info *find_cp_class(int index, struct class_file *class);
 static struct constant_name_and_type_info *find_cp_name_and_type(int index, struct class_file *class);
 static struct constant_utf8_info *find_cp_utf8(int index, struct class_file *class);
+
+static struct field_info *find_field(char *name, struct class_file *class);
+static struct method_info *find_method(char *target_name, struct class_file *class);
 
 static struct constant_utf8_info *get_this_class(struct class_file *class);
 
@@ -148,8 +152,15 @@ int parse_cp_info(struct cp_info **cp_info, FILE *main_file) {
             ((struct constant_class_info *) *cp_info)->name_index = read16(main_file);
             return 0;
         case CONSTANT_FIELDREF:
-            fprintf(stderr, "not yet implemented cp_info: CONSTANT_FIELDREF\n");
-            return -1;
+            *cp_info = (struct cp_info *) malloc(sizeof(struct constant_fieldref_info));
+            if (*cp_info == NULL) {
+                fprintf(stderr, "failed to prepare CONSTANT_FIELDREF cp_info\n");
+                return -1;
+            }
+            ((struct constant_fieldref_info *) *cp_info)->tag = tag;
+            ((struct constant_fieldref_info *) *cp_info)->class_index = read16(main_file);
+            ((struct constant_fieldref_info *) *cp_info)->name_and_type_index = read16(main_file);
+            return 0;
         case CONSTANT_METHODREF:
             *cp_info = (struct cp_info *) malloc(sizeof(struct constant_methodref_info));
             if (*cp_info == NULL) {
@@ -305,6 +316,34 @@ int parse_attribute(struct attribute_info **attr, struct class_file *main_class,
     }
 }
 
+int parse_field(struct field_info **field, struct class_file *main_class, FILE *main_file) {
+    u_int16_t access_flags, name_index, descriptor_index, attributes_count;
+    int i;
+    struct attribute_info **attributes;
+
+    access_flags = read16(main_file);
+    name_index = read16(main_file);
+    descriptor_index = read16(main_file);
+
+    attributes_count = read16(main_file);
+    attributes = (struct attribute_info **) calloc(attributes_count, sizeof(void *));
+    for (i = 0; i < attributes_count; i++) {
+        if (parse_attribute(&attributes[i], main_class, main_file) != 0) {
+            return -1;
+        }
+    }
+
+    *field = (struct field_info *) malloc(sizeof(u_int16_t) * 4 + sizeof(void *) * attributes_count);
+    (*field)->access_flags = access_flags;
+    (*field)->name_index = name_index;
+    (*field)->descriptor_index = descriptor_index;
+    (*field)->attributes_count = attributes_count;
+    (*field)->attributes = attributes;
+    (*field)->data = calloc(1, sizeof(int));
+
+    return 0;
+}
+
 int parse_method(struct method_info **method, struct class_file *main_class, FILE *main_file) {
     u_int16_t access_flags, name_index, descriptor_index, attributes_count;
     int i;
@@ -399,10 +438,15 @@ int parse_class(struct class_file *main_class, FILE *main_file) {
     printf("fields_count: %d\n", main_class->fields_count);
 
     // parse fields
-    // TODO
-    if (main_class->fields_count > 0) {
-        fprintf(stderr, "not yet implemented to parse interfaces\n");
+    main_class->fields = calloc(main_class->fields_count, sizeof(void *));
+    if (main_class->fields == NULL) {
+        fprintf(stderr, "failed to prepare fields\n");
         return -1;
+    }
+    for (i = 0; i < main_class->fields_count; i++) {
+        if (parse_field(&main_class->fields[i], main_class, main_file) != 0) {
+            return -1;
+        }
     }
 
     // parse methods_count
@@ -440,11 +484,60 @@ int parse_class(struct class_file *main_class, FILE *main_file) {
     return 0;
 }
 
+static char *get_field_name(struct field_info *field, struct class_file *class) {
+    // TODO: not thread-safe
+    // TODO: should not limit the length of field name
+    static char name[1024];
+    u_int16_t name_index;
+    struct cp_info *cp_info;
+    struct constant_utf8_info *utf8_info;
+
+    name_index = field->name_index;
+    if (name_index > class->constant_pool_count) {
+        return NULL;
+    }
+
+    cp_info = class->constant_pool[name_index - 1];
+    if (cp_info->tag != CONSTANT_UTF8) {
+        return NULL;
+    }
+    utf8_info = (struct constant_utf8_info *) cp_info;
+
+    read_utf8(name, utf8_info);
+
+    return name;
+}
+
+/**
+ * Find field_info from fields.
+ * Return NULL if not found.
+ */
+static struct field_info *find_field(char *target_name, struct class_file *class) {
+    // TODO: Check field descriptor as well as name
+    int i;
+    int target_name_len;
+    char *name;
+    int name_len;
+
+    target_name_len = strlen(target_name);
+    for (i = 0; i < class->fields_count; i++) {
+        name = get_field_name(class->fields[i], class);
+        if (name != NULL) {
+            name_len = strlen(name);
+            if (target_name_len == name_len && strncmp(name, target_name, name_len) == 0) {
+                return (struct field_info *) class->fields[i];
+            }
+        }
+    }
+
+    return NULL;
+}
+
 /**
  * Find method_info from methods.
  * Return NULL if not found.
  */
-struct method_info *find_method(char *target_name, struct class_file *class) {
+static struct method_info *find_method(char *target_name, struct class_file *class) {
     // TODO: Check method signature as well as name
     int i;
     int target_name_len;
@@ -614,6 +707,25 @@ static struct constant_class_info *find_cp_class(int index, struct class_file *c
 }
 
 /**
+ * Return constant_fieldref_info at the specified index of constant pool.
+ * Return NULL if the item is not Fieldred.
+ */
+static struct constant_fieldref_info *find_cp_fieldref(int index, struct class_file *class) {
+    struct cp_info *cp_info;
+
+    if (index > class->constant_pool_count) {
+        return NULL;
+    }
+
+    cp_info = class->constant_pool[index-1];
+    if (cp_info->tag != CONSTANT_FIELDREF) {
+        return NULL;
+    }
+
+    return (struct constant_fieldref_info *) cp_info;
+}
+
+/**
  * Return constant_methodref_info at the specified index of constant pool.
  * Return NULL if the item is not Methodref.
  */
@@ -704,7 +816,8 @@ void free_frame(struct frame *frame) {
     free(frame);
 }
 
-int push_item_frame(int32_t item, struct frame *frame) {
+// TODO: support other types than int
+int push_operand_stack(int32_t item, struct frame *frame) {
     if (frame->stack_i >= frame->max_stack) {
         return -1;
     }
@@ -713,7 +826,8 @@ int push_item_frame(int32_t item, struct frame *frame) {
     return 0;
 }
 
-int pop_item_frame(int32_t *item, struct frame *frame) {
+// TODO: support other types than int
+int pop_operand_stack(int32_t *item, struct frame *frame) {
     if (frame->stack_i == 0) {
         return -1;
     }
@@ -729,12 +843,14 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
 
     int i;
     int cp_index;
-    int operand1, operand2;
+    int opcode, operand1, operand2;
+    struct constant_fieldref_info *cp_fieldref;
     struct constant_methodref_info *cp_methodref;
     struct constant_class_info *cp_class;
     struct constant_name_and_type_info *cp_name_and_type;
     struct constant_utf8_info *cp_utf8;
     char buf[1024];
+    struct field_info *field;
     struct method_info *method2;
     struct code_attribute *code2;
     struct class_file *class2;
@@ -752,7 +868,7 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
     }
 
     for (i = current_descriptor.num; i > 0; i--) {
-        pop_item_frame(&current_frame->locals[i-1], prev_frame);
+        pop_operand_stack(&current_frame->locals[i - 1], prev_frame);
     }
 
     // interpret code
@@ -761,57 +877,123 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
             // iconst_m1
             p++;
             printf("iconst_m1\n");
-            push_item_frame(-1, current_frame);
+            push_operand_stack(-1, current_frame);
         } else if (*p == 0x04) {
             // iconst_1
             p++;
             printf("iconst_1\n");
-            push_item_frame(1, current_frame);
+            push_operand_stack(1, current_frame);
         } else if (*p == 0x10) {
             // bipush
             p++;
             printf("bipush %d\n", (int32_t) *p);
-            push_item_frame((int32_t) *p, current_frame);
+            push_operand_stack((int32_t) *p, current_frame);
             p++;
         } else if (*p == 0x60) {
             // iadd
             p++;
-            pop_item_frame(&operand2, current_frame);
-            pop_item_frame(&operand1, current_frame);
+            pop_operand_stack(&operand2, current_frame);
+            pop_operand_stack(&operand1, current_frame);
             printf("iadd: %d + %d\n", operand1, operand2);
-            push_item_frame((int32_t) (operand1 + operand2), current_frame);
+            push_operand_stack((int32_t) (operand1 + operand2), current_frame);
         } else if (*p == 0x64) {
             // isub
             p++;
-            pop_item_frame(&operand2, current_frame);
-            pop_item_frame(&operand1, current_frame);
+            pop_operand_stack(&operand2, current_frame);
+            pop_operand_stack(&operand1, current_frame);
             printf("isub: %d - %d\n", operand1, operand2);
-            push_item_frame((int32_t) (operand1 - operand2), current_frame);
+            push_operand_stack((int32_t) (operand1 - operand2), current_frame);
         } else if (*p == 0x1a) {
             // iload_0
             p++;
             printf("iload_0\n");
-            push_item_frame((int32_t) current_frame->locals[0], current_frame);
+            push_operand_stack((int32_t) current_frame->locals[0], current_frame);
         } else if (*p == 0x1b) {
             // iload_1
             // push value to stack from local 1
             p++;
             printf("iload_1\n");
-            push_item_frame((int32_t) current_frame->locals[1], current_frame);
+            push_operand_stack((int32_t) current_frame->locals[1], current_frame);
         } else if (*p == 0x3c) {
             // istore_1
             // pop value from stack and store it in local 1
             p++;
             printf("istore_1\n");
-            pop_item_frame((int32_t *) &current_frame->locals[1], current_frame);
+            pop_operand_stack((int32_t *) &current_frame->locals[1], current_frame);
         } else if (*p == 0xac) {
             // ireturn
             // pop value from the current frame and push to the invoker frame
             p++;
-            pop_item_frame((int32_t *) &operand1, current_frame);
+            pop_operand_stack((int32_t *) &operand1, current_frame);
             printf("ireturn %d\n", operand1);
-            push_item_frame((int32_t) operand1, prev_frame);
+            push_operand_stack((int32_t) operand1, prev_frame);
             return 0;
+        } else if (*p == 0xb2 || *p == 0xb3) {
+            // 0xb2: getstatic
+            // 0xb3: putstatic
+            opcode = *p;
+            p++;
+            cp_index = *p; p++;
+            cp_index = (cp_index << 8) | *p; p++;
+
+            if (opcode == 0xb2) {
+                printf("getstatic %d\n", cp_index);
+            } else {
+                printf("putstatic %d\n", cp_index);
+            }
+
+            cp_fieldref = find_cp_fieldref(cp_index, current_class);
+            if (cp_fieldref == NULL) {
+                fprintf(stderr, "Fieldref is not found in constant pool\n");
+                return -1;
+            }
+
+            cp_class = find_cp_class(cp_fieldref->class_index, current_class);
+            if (cp_class == NULL) {
+                fprintf(stderr, "Class is not found in constant pool\n");
+                return -1;
+            }
+
+            // check class having field
+            cp_utf8 = find_cp_utf8(cp_class->name_index, current_class);
+            if (cp_utf8 == NULL) {
+                fprintf(stderr, "Utf8 is not found in constant pool\n");
+                return -1;
+            }
+            read_utf8(buf, cp_utf8);
+            class2 = get_class(loader, buf);
+            if (class2 == NULL) {
+                fprintf(stderr, "class not found: %s\n", buf);
+                return -1;
+            }
+
+            cp_name_and_type = find_cp_name_and_type(cp_fieldref->name_and_type_index, current_class);
+            if (cp_name_and_type == NULL) {
+                fprintf(stderr, "NameAndType is not found in constant pool\n");
+                return -1;
+            }
+
+            cp_utf8 = find_cp_utf8(cp_name_and_type->name_index, current_class);
+            if (cp_utf8 == NULL) {
+                fprintf(stderr, "Utf8 is not found in constant pool\n");
+                return -1;
+            }
+            read_utf8(buf, cp_utf8);
+
+            field = find_field(buf, class2);
+            if (field == NULL) {
+                fprintf(stderr, "field %s is not found.\n", buf);
+                return -1;
+            }
+
+            if (opcode == 0xb2) {
+                // getstatic
+                push_operand_stack(*(field->data), current_frame);
+            } else {
+                // putstatic
+                pop_operand_stack(&operand1, current_frame);
+                *(field->data) = operand1;
+            }
         } else if (*p == 0xb8) {
             // invokestatic
             p++;
@@ -936,7 +1118,7 @@ int run(char *class_name[], int len) {
         fprintf(stderr, "failed to exec main\n");
         return 1;
     }
-    pop_item_frame((int32_t *) &retval, frame);
+    pop_operand_stack((int32_t *) &retval, frame);
 
     tear_down_class_loader(&loader);
 
