@@ -196,9 +196,9 @@ struct frame *initialize_frame(int max_stack, int max_locals);
 
 void free_frame(struct frame *frame);
 
-int push_item_frame(int32_t item, struct frame *frame);
+int push_operand_stack(int32_t item, struct frame *frame);
 
-int pop_item_frame(int32_t *item, struct frame *frame);
+int pop_operand_stack(int32_t *item, struct frame *frame);
 
 //
 // Run main class

@@ -817,7 +817,7 @@ void free_frame(struct frame *frame) {
 }
 
 // TODO: support other types than int
-int push_item_frame(int32_t item, struct frame *frame) {
+int push_operand_stack(int32_t item, struct frame *frame) {
     if (frame->stack_i >= frame->max_stack) {
         return -1;
     }
@@ -827,7 +827,7 @@ int push_item_frame(int32_t item, struct frame *frame) {
 }
 
 // TODO: support other types than int
-int pop_item_frame(int32_t *item, struct frame *frame) {
+int pop_operand_stack(int32_t *item, struct frame *frame) {
     if (frame->stack_i == 0) {
         return -1;
     }
@@ -868,7 +868,7 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
     }
 
     for (i = current_descriptor.num; i > 0; i--) {
-        pop_item_frame(&current_frame->locals[i-1], prev_frame);
+        pop_operand_stack(&current_frame->locals[i - 1], prev_frame);
     }
 
     // interpret code
@@ -877,56 +877,56 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
             // iconst_m1
             p++;
             printf("iconst_m1\n");
-            push_item_frame(-1, current_frame);
+            push_operand_stack(-1, current_frame);
         } else if (*p == 0x04) {
             // iconst_1
             p++;
             printf("iconst_1\n");
-            push_item_frame(1, current_frame);
+            push_operand_stack(1, current_frame);
         } else if (*p == 0x10) {
             // bipush
             p++;
             printf("bipush %d\n", (int32_t) *p);
-            push_item_frame((int32_t) *p, current_frame);
+            push_operand_stack((int32_t) *p, current_frame);
             p++;
         } else if (*p == 0x60) {
             // iadd
             p++;
-            pop_item_frame(&operand2, current_frame);
-            pop_item_frame(&operand1, current_frame);
+            pop_operand_stack(&operand2, current_frame);
+            pop_operand_stack(&operand1, current_frame);
             printf("iadd: %d + %d\n", operand1, operand2);
-            push_item_frame((int32_t) (operand1 + operand2), current_frame);
+            push_operand_stack((int32_t) (operand1 + operand2), current_frame);
         } else if (*p == 0x64) {
             // isub
             p++;
-            pop_item_frame(&operand2, current_frame);
-            pop_item_frame(&operand1, current_frame);
+            pop_operand_stack(&operand2, current_frame);
+            pop_operand_stack(&operand1, current_frame);
             printf("isub: %d - %d\n", operand1, operand2);
-            push_item_frame((int32_t) (operand1 - operand2), current_frame);
+            push_operand_stack((int32_t) (operand1 - operand2), current_frame);
         } else if (*p == 0x1a) {
             // iload_0
             p++;
             printf("iload_0\n");
-            push_item_frame((int32_t) current_frame->locals[0], current_frame);
+            push_operand_stack((int32_t) current_frame->locals[0], current_frame);
         } else if (*p == 0x1b) {
             // iload_1
             // push value to stack from local 1
             p++;
             printf("iload_1\n");
-            push_item_frame((int32_t) current_frame->locals[1], current_frame);
+            push_operand_stack((int32_t) current_frame->locals[1], current_frame);
         } else if (*p == 0x3c) {
             // istore_1
             // pop value from stack and store it in local 1
             p++;
             printf("istore_1\n");
-            pop_item_frame((int32_t *) &current_frame->locals[1], current_frame);
+            pop_operand_stack((int32_t *) &current_frame->locals[1], current_frame);
         } else if (*p == 0xac) {
             // ireturn
             // pop value from the current frame and push to the invoker frame
             p++;
-            pop_item_frame((int32_t *) &operand1, current_frame);
+            pop_operand_stack((int32_t *) &operand1, current_frame);
             printf("ireturn %d\n", operand1);
-            push_item_frame((int32_t) operand1, prev_frame);
+            push_operand_stack((int32_t) operand1, prev_frame);
             return 0;
         } else if (*p == 0xb2 || *p == 0xb3) {
             // 0xb2: getstatic
@@ -988,10 +988,10 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
 
             if (opcode == 0xb2) {
                 // getstatic
-                push_item_frame(*(field->data), current_frame);
+                push_operand_stack(*(field->data), current_frame);
             } else {
                 // putstatic
-                pop_item_frame(&operand1, current_frame);
+                pop_operand_stack(&operand1, current_frame);
                 *(field->data) = operand1;
             }
         } else if (*p == 0xb8) {
@@ -1118,7 +1118,7 @@ int run(char *class_name[], int len) {
         fprintf(stderr, "failed to exec main\n");
         return 1;
     }
-    pop_item_frame((int32_t *) &retval, frame);
+    pop_operand_stack((int32_t *) &retval, frame);
 
     tear_down_class_loader(&loader);
 
