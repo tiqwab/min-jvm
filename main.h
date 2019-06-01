@@ -36,6 +36,13 @@ struct constant_class_info {
     u_int16_t name_index;
 };
 
+// 4.4.2 The CONSTANT_Fieldref_info Structures (cp_info)
+struct constant_fieldref_info {
+    u_int8_t tag;
+    u_int16_t class_index;
+    u_int16_t name_and_type_index;
+};
+
 // 4.4.2 The CONSTANT_Methodref_info Structure (cp_info)
 struct constant_methodref_info {
     u_int8_t tag;
@@ -59,7 +66,11 @@ struct constant_utf8_info {
 
 // 4.5 Fields
 struct field_info {
-
+    u_int16_t access_flags;
+    u_int16_t name_index;
+    u_int16_t descriptor_index;
+    u_int16_t attributes_count;
+    struct attribute_info **attributes;
 };
 
 // 4.6 Methods

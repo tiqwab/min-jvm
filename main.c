@@ -148,8 +148,15 @@ int parse_cp_info(struct cp_info **cp_info, FILE *main_file) {
             ((struct constant_class_info *) *cp_info)->name_index = read16(main_file);
             return 0;
         case CONSTANT_FIELDREF:
-            fprintf(stderr, "not yet implemented cp_info: CONSTANT_FIELDREF\n");
-            return -1;
+            *cp_info = (struct cp_info *) malloc(sizeof(struct constant_fieldref_info));
+            if (*cp_info == NULL) {
+                fprintf(stderr, "failed to prepare CONSTANT_FIELDREF cp_info\n");
+                return -1;
+            }
+            ((struct constant_fieldref_info *) *cp_info)->tag = tag;
+            ((struct constant_fieldref_info *) *cp_info)->class_index = read16(main_file);
+            ((struct constant_fieldref_info *) *cp_info)->name_and_type_index = read16(main_file);
+            return 0;
         case CONSTANT_METHODREF:
             *cp_info = (struct cp_info *) malloc(sizeof(struct constant_methodref_info));
             if (*cp_info == NULL) {
@@ -305,6 +312,33 @@ int parse_attribute(struct attribute_info **attr, struct class_file *main_class,
     }
 }
 
+int parse_field(struct field_info **field, struct class_file *main_class, FILE *main_file) {
+    u_int16_t access_flags, name_index, descriptor_index, attributes_count;
+    int i;
+    struct attribute_info **attributes;
+
+    access_flags = read16(main_file);
+    name_index = read16(main_file);
+    descriptor_index = read16(main_file);
+
+    attributes_count = read16(main_file);
+    attributes = (struct attribute_info **) calloc(attributes_count, sizeof(void *));
+    for (i = 0; i < attributes_count; i++) {
+        if (parse_attribute(&attributes[i], main_class, main_file) != 0) {
+            return -1;
+        }
+    }
+
+    *field = (struct field_info *) malloc(sizeof(u_int16_t) * 4 + sizeof(void *) * attributes_count);
+    (*field)->access_flags = access_flags;
+    (*field)->name_index = name_index;
+    (*field)->descriptor_index = descriptor_index;
+    (*field)->attributes_count = attributes_count;
+    (*field)->attributes = attributes;
+
+    return 0;
+}
+
 int parse_method(struct method_info **method, struct class_file *main_class, FILE *main_file) {
     u_int16_t access_flags, name_index, descriptor_index, attributes_count;
     int i;
@@ -399,10 +433,15 @@ int parse_class(struct class_file *main_class, FILE *main_file) {
     printf("fields_count: %d\n", main_class->fields_count);
 
     // parse fields
-    // TODO
-    if (main_class->fields_count > 0) {
-        fprintf(stderr, "not yet implemented to parse interfaces\n");
+    main_class->fields = calloc(main_class->fields_count, sizeof(void *));
+    if (main_class->fields == NULL) {
+        fprintf(stderr, "failed to prepare fields\n");
         return -1;
+    }
+    for (i = 0; i < main_class->fields_count; i++) {
+        if (parse_field(&main_class->fields[i], main_class, main_file) != 0) {
+            return -1;
+        }
     }
 
     // parse methods_count

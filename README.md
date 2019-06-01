@@ -24,10 +24,12 @@ For run hello world written in Scala:
 
 Others:
 
+- [ ] Support static fields
+- [ ] Initialization
+- [ ] Support instance methods
+- [ ] Support instance fields
 - [ ] Handle other types of method descriptor than Int (4.3.3)
 - [ ] Handle ReturnDescriptor (4.3.3)
 - [ ] Exceptions
   - e.g. NoClassDefFoundError (5.3)
 - [ ] Support Array
-- [ ] Support fields
-- [ ] Support instance methods
