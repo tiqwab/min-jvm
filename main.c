@@ -5,10 +5,14 @@
 static int read_utf8(char *str, struct constant_utf8_info *cp);
 static char *get_method_name(struct method_info *method, struct class_file *class);
 
+static struct constant_fieldref_info *find_cp_fieldref(int index, struct class_file *class);
 static struct constant_methodref_info *find_cp_methodref(int index, struct class_file *class);
 static struct constant_class_info *find_cp_class(int index, struct class_file *class);
 static struct constant_name_and_type_info *find_cp_name_and_type(int index, struct class_file *class);
 static struct constant_utf8_info *find_cp_utf8(int index, struct class_file *class);
+
+static struct field_info *find_field(char *name, struct class_file *class);
+static struct method_info *find_method(char *target_name, struct class_file *class);
 
 static struct constant_utf8_info *get_this_class(struct class_file *class);
 
@@ -335,6 +339,7 @@ int parse_field(struct field_info **field, struct class_file *main_class, FILE *
     (*field)->descriptor_index = descriptor_index;
     (*field)->attributes_count = attributes_count;
     (*field)->attributes = attributes;
+    (*field)->data = calloc(1, sizeof(int));
 
     return 0;
 }
@@ -479,11 +484,60 @@ int parse_class(struct class_file *main_class, FILE *main_file) {
     return 0;
 }
 
+static char *get_field_name(struct field_info *field, struct class_file *class) {
+    // TODO: not thread-safe
+    // TODO: should not limit the length of field name
+    static char name[1024];
+    u_int16_t name_index;
+    struct cp_info *cp_info;
+    struct constant_utf8_info *utf8_info;
+
+    name_index = field->name_index;
+    if (name_index > class->constant_pool_count) {
+        return NULL;
+    }
+
+    cp_info = class->constant_pool[name_index - 1];
+    if (cp_info->tag != CONSTANT_UTF8) {
+        return NULL;
+    }
+    utf8_info = (struct constant_utf8_info *) cp_info;
+
+    read_utf8(name, utf8_info);
+
+    return name;
+}
+
+/**
+ * Find field_info from fields.
+ * Return NULL if not found.
+ */
+static struct field_info *find_field(char *target_name, struct class_file *class) {
+    // TODO: Check field descriptor as well as name
+    int i;
+    int target_name_len;
+    char *name;
+    int name_len;
+
+    target_name_len = strlen(target_name);
+    for (i = 0; i < class->fields_count; i++) {
+        name = get_field_name(class->fields[i], class);
+        if (name != NULL) {
+            name_len = strlen(name);
+            if (target_name_len == name_len && strncmp(name, target_name, name_len) == 0) {
+                return (struct field_info *) class->fields[i];
+            }
+        }
+    }
+
+    return NULL;
+}
+
 /**
  * Find method_info from methods.
  * Return NULL if not found.
  */
-struct method_info *find_method(char *target_name, struct class_file *class) {
+static struct method_info *find_method(char *target_name, struct class_file *class) {
     // TODO: Check method signature as well as name
     int i;
     int target_name_len;
@@ -653,6 +707,25 @@ static struct constant_class_info *find_cp_class(int index, struct class_file *c
 }
 
 /**
+ * Return constant_fieldref_info at the specified index of constant pool.
+ * Return NULL if the item is not Fieldred.
+ */
+static struct constant_fieldref_info *find_cp_fieldref(int index, struct class_file *class) {
+    struct cp_info *cp_info;
+
+    if (index > class->constant_pool_count) {
+        return NULL;
+    }
+
+    cp_info = class->constant_pool[index-1];
+    if (cp_info->tag != CONSTANT_FIELDREF) {
+        return NULL;
+    }
+
+    return (struct constant_fieldref_info *) cp_info;
+}
+
+/**
  * Return constant_methodref_info at the specified index of constant pool.
  * Return NULL if the item is not Methodref.
  */
@@ -743,6 +816,7 @@ void free_frame(struct frame *frame) {
     free(frame);
 }
 
+// TODO: support other types than int
 int push_item_frame(int32_t item, struct frame *frame) {
     if (frame->stack_i >= frame->max_stack) {
         return -1;
@@ -752,6 +826,7 @@ int push_item_frame(int32_t item, struct frame *frame) {
     return 0;
 }
 
+// TODO: support other types than int
 int pop_item_frame(int32_t *item, struct frame *frame) {
     if (frame->stack_i == 0) {
         return -1;
@@ -768,12 +843,14 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
 
     int i;
     int cp_index;
-    int operand1, operand2;
+    int opcode, operand1, operand2;
+    struct constant_fieldref_info *cp_fieldref;
     struct constant_methodref_info *cp_methodref;
     struct constant_class_info *cp_class;
     struct constant_name_and_type_info *cp_name_and_type;
     struct constant_utf8_info *cp_utf8;
     char buf[1024];
+    struct field_info *field;
     struct method_info *method2;
     struct code_attribute *code2;
     struct class_file *class2;
@@ -851,6 +928,72 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
             printf("ireturn %d\n", operand1);
             push_item_frame((int32_t) operand1, prev_frame);
             return 0;
+        } else if (*p == 0xb2 || *p == 0xb3) {
+            // 0xb2: getstatic
+            // 0xb3: putstatic
+            opcode = *p;
+            p++;
+            cp_index = *p; p++;
+            cp_index = (cp_index << 8) | *p; p++;
+
+            if (opcode == 0xb2) {
+                printf("getstatic %d\n", cp_index);
+            } else {
+                printf("putstatic %d\n", cp_index);
+            }
+
+            cp_fieldref = find_cp_fieldref(cp_index, current_class);
+            if (cp_fieldref == NULL) {
+                fprintf(stderr, "Fieldref is not found in constant pool\n");
+                return -1;
+            }
+
+            cp_class = find_cp_class(cp_fieldref->class_index, current_class);
+            if (cp_class == NULL) {
+                fprintf(stderr, "Class is not found in constant pool\n");
+                return -1;
+            }
+
+            // check class having field
+            cp_utf8 = find_cp_utf8(cp_class->name_index, current_class);
+            if (cp_utf8 == NULL) {
+                fprintf(stderr, "Utf8 is not found in constant pool\n");
+                return -1;
+            }
+            read_utf8(buf, cp_utf8);
+            class2 = get_class(loader, buf);
+            if (class2 == NULL) {
+                fprintf(stderr, "class not found: %s\n", buf);
+                return -1;
+            }
+
+            cp_name_and_type = find_cp_name_and_type(cp_fieldref->name_and_type_index, current_class);
+            if (cp_name_and_type == NULL) {
+                fprintf(stderr, "NameAndType is not found in constant pool\n");
+                return -1;
+            }
+
+            cp_utf8 = find_cp_utf8(cp_name_and_type->name_index, current_class);
+            if (cp_utf8 == NULL) {
+                fprintf(stderr, "Utf8 is not found in constant pool\n");
+                return -1;
+            }
+            read_utf8(buf, cp_utf8);
+
+            field = find_field(buf, class2);
+            if (field == NULL) {
+                fprintf(stderr, "field %s is not found.\n", buf);
+                return -1;
+            }
+
+            if (opcode == 0xb2) {
+                // getstatic
+                push_item_frame(*(field->data), current_frame);
+            } else {
+                // putstatic
+                pop_item_frame(&operand1, current_frame);
+                *(field->data) = operand1;
+            }
         } else if (*p == 0xb8) {
             // invokestatic
             p++;

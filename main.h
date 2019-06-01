@@ -71,6 +71,9 @@ struct field_info {
     u_int16_t descriptor_index;
     u_int16_t attributes_count;
     struct attribute_info **attributes;
+    // TODO: this is not in the spec.
+    // TODO: cannot handle only int
+    int *data;
 };
 
 // 4.6 Methods
@@ -174,8 +177,6 @@ struct class_file {
 };
 
 int parse_class(struct class_file *main_class, FILE *main_file);
-
-struct method_info *find_method(char *target_name, struct class_file *class);
 
 struct code_attribute *get_code(struct method_info *method, struct class_file *class);
 
