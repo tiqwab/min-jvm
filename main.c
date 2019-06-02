@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include "main.h"
 
 static int read_utf8(char *str, struct constant_utf8_info *cp);
@@ -109,6 +110,39 @@ struct class_file *get_class(struct class_loader *loader, char *name) {
 
 int tear_down_class_loader(struct class_loader *loader) {
     return 0;
+}
+
+//
+// Instance Creation
+//
+
+// There is no spec about structure of class instances.
+// a naive implementation would be like Map[String, Any]?
+struct class_instance {
+
+};
+
+/**
+ * Create a new instance of the specified class.
+ * Return index to reference the created object.
+ * Return -1 if failed to create.
+ */
+static int create_instance(
+        struct constant_class_info *cp_class, struct class_file *class, struct class_loader *loader) {
+    // FIXME: Remove limit for number of objects
+#define MAX_INSTANCES 1024
+    static struct class_instance *instances[MAX_INSTANCES];
+    static int instance_count = 0;
+    int index;
+
+    if (instance_count >= MAX_INSTANCES) {
+        return -1;
+    }
+
+    index = instance_count;
+    instances[index] = calloc(1, sizeof(struct class_instance));
+    instance_count++;
+    return index;
 }
 
 /**
@@ -694,6 +728,23 @@ static int get_method_descriptor(struct method_descriptor *descriptor, struct me
     return 0;
 }
 
+#define ACC_PUBLIC       0x0001
+#define ACC_PRIVATE      0x0002
+#define ACC_PROTECTED    0x0004
+#define ACC_STATIC       0x0008
+#define ACC_FINAL        0x0010
+#define ACC_SYNCHRONIZED 0x0020
+#define ACC_BRIDGE       0x0040
+#define ACC_VARARGS      0x0080
+#define ACC_NATIVE       0x0100
+#define ACC_ABSTRACT     0x0400
+#define ACC_STRICT       0x0800
+#define ACC_SYNTHETIC    0x1000
+
+static bool is_static_method(struct method_info *method) {
+    return ((method->access_flags & ACC_STATIC) != 0);
+}
+
 /**
  * Return this class name representing by constant_utf8_info.
  * This should not return NULL.
@@ -861,7 +912,7 @@ static int exec_method(struct method_info *current_method, struct code_attribute
     u_int16_t current_code_len = current_code->code_length;
     struct method_descriptor current_descriptor;
 
-    int i;
+    int i, j;
     int cp_index;
     int opcode, operand1, operand2;
     struct constant_fieldref_info *cp_fieldref;
@@ -874,6 +925,7 @@ static int exec_method(struct method_info *current_method, struct code_attribute
     struct method_info *method2;
     struct code_attribute *code2;
     struct class_file *class2;
+    int instance;
 
     // prepare frame
     struct frame *current_frame = initialize_frame(current_code->max_stack, current_code->max_locals);
@@ -887,8 +939,14 @@ static int exec_method(struct method_info *current_method, struct code_attribute
         return -1;
     }
 
-    for (i = current_descriptor.num; i > 0; i--) {
-        pop_operand_stack(&current_frame->locals[i - 1], prev_frame);
+    i = 0;
+    // for 'this' reference
+    if (!is_static_method(current_method)) {
+        pop_operand_stack(&current_frame->locals[0], prev_frame);
+        i++;
+    }
+    for (j = current_descriptor.num; j > 0; j--) {
+        pop_operand_stack(&current_frame->locals[j - 1 + i], prev_frame);
     }
 
     // interpret code
@@ -914,6 +972,49 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             printf("bipush %d\n", (int32_t) *p);
             push_operand_stack((int32_t) *p, current_frame);
             p++;
+        } else if (*p == 0x1a) {
+            // iload_0
+            p++;
+            printf("iload_0\n");
+            push_operand_stack((int32_t) current_frame->locals[0], current_frame);
+        } else if (*p == 0x1b) {
+            // iload_1
+            // push value to stack from local 1
+            p++;
+            printf("iload_1\n");
+            push_operand_stack((int32_t) current_frame->locals[1], current_frame);
+        } else if (*p == 0x2a) {
+            // aload_0
+            p++;
+            printf("aload_0\n");
+
+            push_operand_stack((int32_t) current_frame->locals[0], current_frame);
+        } else if (*p == 0x2b) {
+            // aload_1
+            p++;
+            printf("aload_1\n");
+
+            push_operand_stack((int32_t) current_frame->locals[1], current_frame);
+        } else if (*p == 0x3c) {
+            // istore_1
+            // pop value from stack and store it in local 1
+            p++;
+            printf("istore_1\n");
+            pop_operand_stack((int32_t *) &current_frame->locals[1], current_frame);
+        } else if (*p == 0x4c) {
+            // astore_1
+            p++;
+            printf("astore_1\n");
+
+            pop_operand_stack((int32_t *) &current_frame->locals[1], current_frame);
+        } else if (*p == 0x59) {
+            // dup
+            p++;
+            printf("dup\n");
+
+            pop_operand_stack(&operand1, current_frame);
+            push_operand_stack(operand1, current_frame);
+            push_operand_stack(operand1, current_frame);
         } else if (*p == 0x60) {
             // iadd
             p++;
@@ -928,23 +1029,6 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             pop_operand_stack(&operand1, current_frame);
             printf("isub: %d - %d\n", operand1, operand2);
             push_operand_stack((int32_t) (operand1 - operand2), current_frame);
-        } else if (*p == 0x1a) {
-            // iload_0
-            p++;
-            printf("iload_0\n");
-            push_operand_stack((int32_t) current_frame->locals[0], current_frame);
-        } else if (*p == 0x1b) {
-            // iload_1
-            // push value to stack from local 1
-            p++;
-            printf("iload_1\n");
-            push_operand_stack((int32_t) current_frame->locals[1], current_frame);
-        } else if (*p == 0x3c) {
-            // istore_1
-            // pop value from stack and store it in local 1
-            p++;
-            printf("istore_1\n");
-            pop_operand_stack((int32_t *) &current_frame->locals[1], current_frame);
         } else if (*p == 0xac) {
             // ireturn
             // pop value from the current frame and push to the invoker frame
@@ -952,7 +1036,7 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             pop_operand_stack((int32_t *) &operand1, current_frame);
             printf("ireturn %d\n", operand1);
             push_operand_stack((int32_t) operand1, prev_frame);
-            return 0;
+            break;
         } else if (*p == 0xb1) {
             // return
             p++;
@@ -962,8 +1046,10 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             // 0xb3: putstatic
             opcode = *p;
             p++;
-            cp_index = *p; p++;
-            cp_index = (cp_index << 8) | *p; p++;
+            cp_index = *p;
+            p++;
+            cp_index = (cp_index << 8) | *p;
+            p++;
 
             if (opcode == 0xb2) {
                 printf("getstatic %d\n", cp_index);
@@ -1023,11 +1109,82 @@ static int exec_method(struct method_info *current_method, struct code_attribute
                 pop_operand_stack(&operand1, current_frame);
                 *(field->data) = operand1;
             }
+        } else if (*p == 0xb6 || *p == 0xb7) {
+            // invokevirtual (0xb6) or invokespecial (0xb7)
+            // TODO: follow spec (what should be checked respectively?)
+            opcode = *p;
+            p++;
+            cp_index = *p;
+            p++;
+            cp_index = (cp_index << 8) | *p;
+            p++;
+            if (opcode == 0xb6) {
+                printf("invokevirtual %d\n", cp_index);
+            } else {
+                printf("invokespecial %d\n", cp_index);
+            }
+
+            cp_methodref = find_cp_methodref(cp_index, current_class);
+            if (cp_methodref == NULL) {
+                fprintf(stderr, "Methodref is not found in constant pool\n");
+                return -1;
+            }
+
+            cp_class = find_cp_class(cp_methodref->class_index, current_class);
+            if (cp_class == NULL) {
+                fprintf(stderr, "Class is not found in constant pool\n");
+                return -1;
+            }
+
+            // check class having method
+            cp_utf8 = find_cp_utf8(cp_class->name_index, current_class);
+            if (cp_utf8 == NULL) {
+                fprintf(stderr, "Utf8 is not found in constant pool\n");
+                return -1;
+            }
+            read_utf8(buf, cp_utf8);
+            class2 = get_class(loader, buf);
+            if (class2 == NULL) {
+                fprintf(stderr, "class not found: %s\n", buf);
+                return -1;
+            }
+
+            cp_name_and_type = find_cp_name_and_type(cp_methodref->name_and_type_index, current_class);
+            if (cp_name_and_type == NULL) {
+                fprintf(stderr, "NameAndType is not found in constant pool\n");
+                return -1;
+            }
+
+            cp_utf8 = find_cp_utf8(cp_name_and_type->name_index, current_class);
+            if (cp_utf8 == NULL) {
+                fprintf(stderr, "Utf8 is not found in constant pool\n");
+                return -1;
+            }
+            read_utf8(buf, cp_utf8);
+
+            method2 = find_method(buf, class2);
+            if (method2 == NULL) {
+                fprintf(stderr, "not found method: %s\n", buf);
+                return -1;
+            }
+
+            code2 = get_code(method2, class2);
+            if (code2 == NULL) {
+                fprintf(stderr, "not found code\n");
+                return -1;
+            }
+
+            if (exec_method(method2, code2, current_frame, class2, loader) != 0) {
+                fprintf(stderr, "unexpected error while call method\n");
+                return -1;
+            }
         } else if (*p == 0xb8) {
             // invokestatic
             p++;
-            cp_index = *p; p++;
-            cp_index = (cp_index << 8) | *p; p++;
+            cp_index = *p;
+            p++;
+            cp_index = (cp_index << 8) | *p;
+            p++;
             printf("invokestatic %d\n", cp_index);
 
             cp_methodref = find_cp_methodref(cp_index, current_class);
@@ -1084,6 +1241,42 @@ static int exec_method(struct method_info *current_method, struct code_attribute
                 fprintf(stderr, "unexpected error while call method\n");
                 return -1;
             }
+        } else if (*p == 0xbb) {
+            // new
+            p++;
+            cp_index = *p;
+            p++;
+            cp_index = (cp_index << 8) | *p;
+            p++;
+            printf("new %d\n", cp_index);
+
+            // get class from constant pool
+            cp_class = find_cp_class(cp_index, current_class);
+            if (cp_class == NULL) {
+                fprintf(stderr, "Class is not found in constant pool\n");
+                return -1;
+            }
+            cp_utf8 = find_cp_utf8(cp_class->name_index, current_class);
+            if (cp_utf8 == NULL) {
+                fprintf(stderr, "Utf8 is not found in constant pool\n");
+                return -1;
+            }
+            read_utf8(buf, cp_utf8);
+            class2 = get_class(loader, buf);
+            if (class2 == NULL) {
+                fprintf(stderr, "class not found: %s\n", buf);
+                return -1;
+            }
+
+            // create instance
+            instance = create_instance(cp_class, class2, loader);
+            if (instance < 0) {
+                fprintf(stderr, "failed to create instance\n");
+                return -1;
+            }
+
+            // push reference to operand stack
+            push_operand_stack(instance, current_frame);
         } else {
             fprintf(stderr, "unknown inst\n");
             return -1;
@@ -1094,29 +1287,42 @@ static int exec_method(struct method_info *current_method, struct code_attribute
     return 0;
 }
 
-int run(char *class_name[], int len) {
+int run(char *user_class_name[], int user_class_len) {
     char *main_class_name;
     struct class_file *main_class;
     struct class_loader loader;
     struct method_info *method;
     struct code_attribute *code;
     struct frame *frame;
-    int retval;
+    int i, retval;
     char *c;
 
-    if (initialize_class_loader(&loader, class_name, len) < 0) {
+    static char *stdlib_class_name[] = {"java/lang/Object.class"};
+    static int stdlib_class_len = (sizeof(stdlib_class_name) / sizeof (stdlib_class_name[0]));
+
+    int class_len = user_class_len + stdlib_class_len;
+    char **class_name = calloc(class_len, sizeof(char *));
+    for (i = 0; i < class_len; i++) {
+        if (i < user_class_len) {
+            class_name[i] = user_class_name[i];
+        } else {
+            class_name[i] = stdlib_class_name[i - user_class_len];
+        }
+    }
+
+    if (initialize_class_loader(&loader, class_name, class_len) < 0) {
         fprintf(stderr, "failed to initiazlie class loader\n");
         return 1;
     }
 
     // Derive main class name without extension
     // e.g. First.class -> First
-    main_class_name = malloc(strlen(class_name[0]) + 1);
+    main_class_name = malloc(strlen(user_class_name[0]) + 1);
     if (main_class_name == NULL) {
         fprintf(stderr, "failed to malloc\n");
         return 1;
     }
-    strcpy(main_class_name, class_name[0]);
+    strcpy(main_class_name, user_class_name[0]);
     c = strchr(main_class_name, '.');
     if (c == NULL) {
         fprintf(stderr, "failed to get main class name\n");
