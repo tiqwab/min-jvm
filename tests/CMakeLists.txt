@@ -14,6 +14,7 @@ foreach(name IN ITEMS
         call_static_method_other_class
         call_static_field
         initialize_class
+        create_instance
         )
     add_min_jvm_executable(${name})
     add_test(NAME test_${name} COMMAND $<TARGET_FILE:test_${name}>)
@@ -28,6 +29,7 @@ foreach(name IN ITEMS
         CallStaticMethodCallee.class
         StaticField.class
         InitializeClass.class
+        CreateInstance.class
         )
     configure_file(${name} . COPYONLY)
 endforeach()

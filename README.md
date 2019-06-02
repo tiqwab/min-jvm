@@ -29,10 +29,10 @@ Others:
 - [ ] Support instance methods
 - [ ] Support instance fields
 - [ ] Initialization of instance
+- [ ] Support static fields other than Int (particularly object references)
 - [ ] Handle other types of method descriptor than Int (4.3.3)
 - [ ] Handle ReturnDescriptor (4.3.3)
 - [ ] Support Array
-- [ ] Support static fields other than Int
 - [ ] Exceptions
   - e.g. NoClassDefFoundError (5.3)
 - [ ] Lazy loading of class file
