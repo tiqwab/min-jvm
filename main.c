@@ -25,7 +25,28 @@ struct class_loader {
     struct class_file *classes;
 };
 
-int initialize_class_loader(struct class_loader *loader, char *class_names[], int len) {
+static int exec_method(struct method_info *current_method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader);
+
+static int initialize_class(struct class_file *class, struct class_loader *loader) {
+    // find <clinit> method
+    struct method_info *method = find_method("<clinit>", class);
+    if (method == NULL) {
+        return 0;
+    }
+
+    struct code_attribute *code = get_code(method, class);
+    if (code == NULL) {
+        fprintf(stderr, "not found code attr in <clinit>\n");
+        return -1;
+    }
+
+    struct frame *frame = initialize_frame(code->max_stack, code->max_locals);
+
+    // exec <clinit>
+    return exec_method(method, code, frame, class, loader);
+}
+
+static int initialize_class_loader(struct class_loader *loader, char *class_names[], int len) {
     FILE *f;
     int i;
     struct class_file *class_files;
@@ -35,6 +56,9 @@ int initialize_class_loader(struct class_loader *loader, char *class_names[], in
         return -1;
     }
 
+    loader->class_num = len;
+    loader->classes = class_files;
+
     for (i = 0; i < len; i++) {
         f = fopen(class_names[i], "r");
         if (f == NULL) {
@@ -42,9 +66,13 @@ int initialize_class_loader(struct class_loader *loader, char *class_names[], in
             return -1;
         }
 
+        // Parse class
+        // After parsing, initialize class by executing `<clinit>`
         parse_class(&class_files[i], f);
 
-        // TODO should exec <init> here?
+        if (initialize_class(&class_files[i], loader) != 0) {
+            return -1;
+        }
 
         if (fclose(f) != 0) {
             perror("fclose");
@@ -52,8 +80,6 @@ int initialize_class_loader(struct class_loader *loader, char *class_names[], in
         }
     }
 
-    loader->class_num = len;
-    loader->classes = class_files;
     return 0;
 }
 
@@ -84,12 +110,6 @@ struct class_file *get_class(struct class_loader *loader, char *name) {
 int tear_down_class_loader(struct class_loader *loader) {
     return 0;
 }
-
-//
-// Invoke method
-//
-
-int exec_method(struct method_info *method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader);
 
 /**
  * Return length of str.
@@ -836,7 +856,7 @@ int pop_operand_stack(int32_t *item, struct frame *frame) {
     return 0;
 }
 
-int exec_method(struct method_info *current_method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader) {
+static int exec_method(struct method_info *current_method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader) {
     u_int8_t *p = current_code->code;
     u_int16_t current_code_len = current_code->code_length;
     struct method_descriptor current_descriptor;
@@ -878,6 +898,11 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
             p++;
             printf("iconst_m1\n");
             push_operand_stack(-1, current_frame);
+        } else if (*p == 0x03) {
+            // iconst_0
+            p++;
+            printf("iconst_0\n");
+            push_operand_stack(0, current_frame);
         } else if (*p == 0x04) {
             // iconst_1
             p++;
@@ -928,6 +953,10 @@ int exec_method(struct method_info *current_method, struct code_attribute *curre
             printf("ireturn %d\n", operand1);
             push_operand_stack((int32_t) operand1, prev_frame);
             return 0;
+        } else if (*p == 0xb1) {
+            // return
+            p++;
+            printf("return\n");
         } else if (*p == 0xb2 || *p == 0xb3) {
             // 0xb2: getstatic
             // 0xb3: putstatic
