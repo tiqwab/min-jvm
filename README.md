@@ -26,6 +26,7 @@ Others:
 
 - [x] Support static fields
 - [x] Initialization of class
+- [x] Support instance creation
 - [ ] Support instance methods
 - [ ] Support instance fields
 - [ ] Initialization of instance
@@ -36,3 +37,5 @@ Others:
 - [ ] Exceptions
   - e.g. NoClassDefFoundError (5.3)
 - [ ] Lazy loading of class file
+- [ ] How to prepare stdlib?
+  - In OpenJDK (and Oracle JDK), rt.jar provides stdlib?
