@@ -1,0 +1,98 @@
+Classfile /home/nm/workspace/java/sample/instance-fields/InstanceFields.class
+  Last modified Jun 2, 2019; size 481 bytes
+  MD5 checksum 2ae473d98b7d51050a6cb13e608a6c0f
+  Compiled from "InstanceFields.java"
+class InstanceFields
+  minor version: 0
+  major version: 52
+  flags: ACC_SUPER
+Constant pool:
+   #1 = Methodref          #7.#22         // java/lang/Object."<init>":()V
+   #2 = Fieldref           #3.#23         // InstanceFields.x:I
+   #3 = Class              #24            // InstanceFields
+   #4 = Methodref          #3.#22         // InstanceFields."<init>":()V
+   #5 = Methodref          #3.#25         // InstanceFields.setX:(I)V
+   #6 = Methodref          #3.#26         // InstanceFields.getX:()I
+   #7 = Class              #27            // java/lang/Object
+   #8 = Utf8               x
+   #9 = Utf8               I
+  #10 = Utf8               <init>
+  #11 = Utf8               ()V
+  #12 = Utf8               Code
+  #13 = Utf8               LineNumberTable
+  #14 = Utf8               getX
+  #15 = Utf8               ()I
+  #16 = Utf8               setX
+  #17 = Utf8               (I)V
+  #18 = Utf8               main
+  #19 = Utf8               ([Ljava/lang/String;)I
+  #20 = Utf8               SourceFile
+  #21 = Utf8               InstanceFields.java
+  #22 = NameAndType        #10:#11        // "<init>":()V
+  #23 = NameAndType        #8:#9          // x:I
+  #24 = Utf8               InstanceFields
+  #25 = NameAndType        #16:#17        // setX:(I)V
+  #26 = NameAndType        #14:#15        // getX:()I
+  #27 = Utf8               java/lang/Object
+{
+  public InstanceFields();
+    descriptor: ()V
+    flags: ACC_PUBLIC
+    Code:
+      stack=2, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: aload_0
+         5: iconst_1
+         6: putfield      #2                  // Field x:I
+         9: return
+      LineNumberTable:
+        line 4: 0
+        line 5: 4
+        line 6: 9
+
+  public int getX();
+    descriptor: ()I
+    flags: ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: getfield      #2                  // Field x:I
+         4: ireturn
+      LineNumberTable:
+        line 9: 0
+
+  public void setX(int);
+    descriptor: (I)V
+    flags: ACC_PUBLIC
+    Code:
+      stack=2, locals=2, args_size=2
+         0: aload_0
+         1: iload_1
+         2: putfield      #2                  // Field x:I
+         5: return
+      LineNumberTable:
+        line 13: 0
+        line 14: 5
+
+  public static int main(java.lang.String[]);
+    descriptor: ([Ljava/lang/String;)I
+    flags: ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=2, locals=2, args_size=1
+         0: new           #3                  // class InstanceFields
+         3: dup
+         4: invokespecial #4                  // Method "<init>":()V
+         7: astore_1
+         8: aload_1
+         9: bipush        50
+        11: invokevirtual #5                  // Method setX:(I)V
+        14: aload_1
+        15: invokevirtual #6                  // Method getX:()I
+        18: ireturn
+      LineNumberTable:
+        line 17: 0
+        line 18: 8
+        line 19: 14
+}
+SourceFile: "InstanceFields.java"

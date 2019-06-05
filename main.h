@@ -73,6 +73,7 @@ struct field_info {
     struct attribute_info **attributes;
     // TODO: this is not in the spec.
     // TODO: cannot handle only int
+    // FIXME: this is used only for static fields
     int *data;
 };
 
