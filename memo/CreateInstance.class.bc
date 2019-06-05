@@ -1,0 +1,67 @@
+Classfile /home/nm/workspace/java/sample/create-instances/CreateInstance.class
+  Last modified Jun 2, 2019; size 363 bytes
+  MD5 checksum 785ca6969dd5cc2437521948132745e7
+  Compiled from "CreateInstances.java"
+class CreateInstance
+  minor version: 0
+  major version: 52
+  flags: ACC_SUPER
+Constant pool:
+   #1 = Methodref          #5.#16         // java/lang/Object."<init>":()V
+   #2 = Class              #17            // CreateInstance
+   #3 = Methodref          #2.#16         // CreateInstance."<init>":()V
+   #4 = Methodref          #2.#18         // CreateInstance.return49:()I
+   #5 = Class              #19            // java/lang/Object
+   #6 = Utf8               <init>
+   #7 = Utf8               ()V
+   #8 = Utf8               Code
+   #9 = Utf8               LineNumberTable
+  #10 = Utf8               return49
+  #11 = Utf8               ()I
+  #12 = Utf8               main
+  #13 = Utf8               ([Ljava/lang/String;)I
+  #14 = Utf8               SourceFile
+  #15 = Utf8               CreateInstances.java
+  #16 = NameAndType        #6:#7          // "<init>":()V
+  #17 = Utf8               CreateInstance
+  #18 = NameAndType        #10:#11        // return49:()I
+  #19 = Utf8               java/lang/Object
+{
+  CreateInstance();
+    descriptor: ()V
+    flags:
+    Code:
+      stack=1, locals=1, args_size=1
+         0: aload_0
+         1: invokespecial #1                  // Method java/lang/Object."<init>":()V
+         4: return
+      LineNumberTable:
+        line 1: 0
+
+  public int return49();
+    descriptor: ()I
+    flags: ACC_PUBLIC
+    Code:
+      stack=1, locals=1, args_size=1
+         0: bipush        49
+         2: ireturn
+      LineNumberTable:
+        line 3: 0
+
+  public static int main(java.lang.String[]);
+    descriptor: ([Ljava/lang/String;)I
+    flags: ACC_PUBLIC, ACC_STATIC
+    Code:
+      stack=2, locals=2, args_size=1
+         0: new           #2                  // class CreateInstance
+         3: dup
+         4: invokespecial #3                  // Method "<init>":()V
+         7: astore_1
+         8: aload_1
+         9: invokevirtual #4                  // Method return49:()I
+        12: ireturn
+      LineNumberTable:
+        line 7: 0
+        line 8: 8
+}
+SourceFile: "CreateInstances.java"

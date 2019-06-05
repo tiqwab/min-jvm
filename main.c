@@ -1,5 +1,6 @@
 #include <stdlib.h>
 #include <string.h>
+#include <stdbool.h>
 #include "main.h"
 
 static int read_utf8(char *str, struct constant_utf8_info *cp);
@@ -11,6 +12,8 @@ static struct constant_class_info *find_cp_class(int index, struct class_file *c
 static struct constant_name_and_type_info *find_cp_name_and_type(int index, struct class_file *class);
 static struct constant_utf8_info *find_cp_utf8(int index, struct class_file *class);
 
+static char *get_field_name(struct field_info *field, struct class_file *class);
+static char *get_field_descriptor(struct field_info *field, struct class_file *class);
 static struct field_info *find_field(char *name, struct class_file *class);
 static struct method_info *find_method(char *target_name, struct class_file *class);
 
@@ -109,6 +112,136 @@ struct class_file *get_class(struct class_loader *loader, char *name) {
 
 int tear_down_class_loader(struct class_loader *loader) {
     return 0;
+}
+
+//
+// Instance Creation
+//
+
+#define FIELD_TYPE_INT 1
+
+struct class_instance_field {
+    char *name;
+    int typ;
+    void *data;
+};
+
+// There is no spec about structure of class instances.
+// a naive implementation would be like Map[String, Any]?
+struct class_instance {
+    int field_num;
+    struct class_file *class;
+    struct class_instance_field **fields;
+};
+
+static int create_instance_field(struct class_instance_field **field, char *name, char *descriptor) {
+    char *field_name;
+    int name_len;
+
+    (*field) = malloc(sizeof(struct class_instance_field));
+
+    name_len = strlen(name);
+    field_name = malloc(name_len + 1);
+    strcpy(field_name, name);
+    (*field)->name = field_name;
+
+    switch (descriptor[0]) {
+        case 'I':
+            (*field)->typ = FIELD_TYPE_INT;
+            (*field)->data = malloc(sizeof(u_int32_t));
+            *((u_int32_t *) (*field)->data) = 0;
+            break;
+        default:
+            fprintf(stderr, "not yet implemented for %s in create_instance_field\n", descriptor);
+            return -1;
+    }
+
+    return 0;
+}
+
+// FIXME: Remove limit for number of objects
+#define MAX_INSTANCES 1024
+static struct class_instance *instances[MAX_INSTANCES];
+static int instance_count = 0;
+
+/**
+ * Create a new instance of the specified class.
+ * Return index to reference the created object.
+ * Return -1 if failed to create.
+ */
+static int create_instance(
+        struct constant_class_info *cp_class, struct class_file *class, struct class_loader *loader) {
+    int field_i, instance_i;
+
+    if (instance_count >= MAX_INSTANCES) {
+        return -1;
+    }
+
+    instance_i = instance_count;
+    instances[instance_i] = calloc(1, sizeof(struct class_instance));
+    instances[instance_i]->class = class;
+    instances[instance_i]->field_num = class->fields_count;
+    instances[instance_i]->fields = calloc(class->fields_count, sizeof(struct class_instance_field *));
+
+    // initialize fields
+    for (field_i = 0; field_i < class->fields_count; field_i++) {
+        char *field_name = get_field_name(class->fields[field_i], class);
+        char *field_descriptor = get_field_descriptor(class->fields[field_i], class);
+        if (create_instance_field(&instances[instance_i]->fields[field_i], field_name, field_descriptor) != 0) {
+            fprintf(stderr, "failed to initialize field\n");
+            return -1;
+        }
+    }
+
+    instance_count++;
+    return instance_i;
+}
+
+static struct class_instance *get_instance(int index) {
+    if (index >= instance_count || index < 0) {
+        return NULL;
+    }
+    return instances[index];
+}
+
+static int get_instance_field(struct class_instance *instance, const char *name, void *value) {
+    int i;
+    struct class_instance_field *field;
+
+    for (i = 0; i < instance->field_num; i++) {
+        field = instance->fields[i];
+        if (strcmp(field->name, name) == 0) {
+            switch (field->typ) {
+                case FIELD_TYPE_INT:
+                    *((int *) value) = *((int *) field->data);
+                    return 0;
+                default:
+                    return -1;
+            }
+        }
+    }
+
+    return -1;
+}
+
+static int put_instance_field(struct class_instance *instance, const char *name, void *value) {
+    int i;
+    struct class_instance_field *field;
+
+    for (i = 0; i < instance->field_num; i++) {
+        field = instance->fields[i];
+        if (strcmp(field->name, name) == 0) {
+            switch (field->typ) {
+                case FIELD_TYPE_INT:
+                    *((int *) field->data) = *((int *) value);
+                    return 0;
+                default:
+                    return -1;
+            }
+        }
+    }
+
+    return -1;
 }
 
 /**
@@ -353,13 +486,14 @@ int parse_field(struct field_info **field, struct class_file *main_class, FILE *
         }
     }
 
-    *field = (struct field_info *) malloc(sizeof(u_int16_t) * 4 + sizeof(void *) * attributes_count);
+    // 4 u_int16_t fields, attributes pointers, and data
+    *field = (struct field_info *) malloc(sizeof(u_int16_t) * 4 + sizeof(void **) + sizeof(int *));
     (*field)->access_flags = access_flags;
     (*field)->name_index = name_index;
     (*field)->descriptor_index = descriptor_index;
     (*field)->attributes_count = attributes_count;
     (*field)->attributes = attributes;
-    (*field)->data = calloc(1, sizeof(int));
+    (*field)->data = calloc(1, sizeof(int *));
 
     return 0;
 }
@@ -381,7 +515,7 @@ int parse_method(struct method_info **method, struct class_file *main_class, FIL
         }
     }
 
-    *method = (struct method_info *) malloc(sizeof(u_int16_t) * 4 + sizeof(void *) * attributes_count);
+    *method = (struct method_info *) malloc(sizeof(u_int16_t) * 4 + sizeof(void **));
     (*method)->access_flags = access_flags;
     (*method)->name_index = name_index;
     (*method)->descriptor_index = descriptor_index;
@@ -509,23 +643,32 @@ static char *get_field_name(struct field_info *field, struct class_file *class) 
     // TODO: should not limit the length of field name
     static char name[1024];
     u_int16_t name_index;
-    struct cp_info *cp_info;
     struct constant_utf8_info *utf8_info;
 
     name_index = field->name_index;
-    if (name_index > class->constant_pool_count) {
+    utf8_info = find_cp_utf8(name_index, class);
+    if (utf8_info == NULL) {
         return NULL;
     }
-
-    cp_info = class->constant_pool[name_index - 1];
-    if (cp_info->tag != CONSTANT_UTF8) {
-        return NULL;
-    }
-    utf8_info = (struct constant_utf8_info *) cp_info;
 
     read_utf8(name, utf8_info);
-
     return name;
+}
+
+static char *get_field_descriptor(struct field_info *field, struct class_file *class) {
+    // TODO: not thread-safe
+    static char descriptor[2];
+    u_int16_t descriptor_index;
+    struct constant_utf8_info *utf8_info;
+
+    descriptor_index = field->descriptor_index;
+    utf8_info = find_cp_utf8(descriptor_index, class);
+    if (utf8_info == NULL) {
+        return NULL;
+    }
+
+    read_utf8(descriptor, utf8_info);
+    return descriptor;
 }
 
 /**
@@ -694,6 +837,23 @@ static int get_method_descriptor(struct method_descriptor *descriptor, struct me
     return 0;
 }
 
+#define ACC_PUBLIC       0x0001
+#define ACC_PRIVATE      0x0002
+#define ACC_PROTECTED    0x0004
+#define ACC_STATIC       0x0008
+#define ACC_FINAL        0x0010
+#define ACC_SYNCHRONIZED 0x0020
+#define ACC_BRIDGE       0x0040
+#define ACC_VARARGS      0x0080
+#define ACC_NATIVE       0x0100
+#define ACC_ABSTRACT     0x0400
+#define ACC_STRICT       0x0800
+#define ACC_SYNTHETIC    0x1000
+
+static bool is_static_method(struct method_info *method) {
+    return ((method->access_flags & ACC_STATIC) != 0);
+}
+
 /**
  * Return this class name representing by constant_utf8_info.
  * This should not return NULL.
@@ -836,6 +996,21 @@ void free_frame(struct frame *frame) {
     free(frame);
 }
 
+#define DESC_INT ('I')
+
+/**
+ * Return how many units are necessary for descriptor c
+ */
+static int get_operand_stack_units(char c) {
+    switch (c) {
+        case DESC_INT:
+            return 1;
+        default:
+            fprintf(stderr, "not yet implemented for %c in get_operand_stack_units\n", c);
+            return -1;
+    }
+}
+
 // TODO: support other types than int
 int push_operand_stack(int32_t item, struct frame *frame) {
     if (frame->stack_i >= frame->max_stack) {
@@ -861,9 +1036,9 @@ static int exec_method(struct method_info *current_method, struct code_attribute
     u_int16_t current_code_len = current_code->code_length;
     struct method_descriptor current_descriptor;
 
-    int i;
+    int i, j;
     int cp_index;
-    int opcode, operand1, operand2;
+    int opcode, operand1, operand2, stack_unit;
     struct constant_fieldref_info *cp_fieldref;
     struct constant_methodref_info *cp_methodref;
     struct constant_class_info *cp_class;
@@ -874,6 +1049,8 @@ static int exec_method(struct method_info *current_method, struct code_attribute
     struct method_info *method2;
     struct code_attribute *code2;
     struct class_file *class2;
+    int instance_index;
+    struct class_instance *instance;
 
     // prepare frame
     struct frame *current_frame = initialize_frame(current_code->max_stack, current_code->max_locals);
@@ -887,8 +1064,16 @@ static int exec_method(struct method_info *current_method, struct code_attribute
         return -1;
     }
 
-    for (i = current_descriptor.num; i > 0; i--) {
-        pop_operand_stack(&current_frame->locals[i - 1], prev_frame);
+    i = 0;
+    // for 'this' reference
+    if (!is_static_method(current_method)) {
+        i++;
+    }
+    for (j = current_descriptor.num; j > 0; j--) {
+        pop_operand_stack(&current_frame->locals[j - 1 + i], prev_frame);
+    }
+    if (!is_static_method(current_method)) {
+        pop_operand_stack(&current_frame->locals[0], prev_frame);
     }
 
     // interpret code
@@ -914,6 +1099,49 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             printf("bipush %d\n", (int32_t) *p);
             push_operand_stack((int32_t) *p, current_frame);
             p++;
+        } else if (*p == 0x1a) {
+            // iload_0
+            p++;
+            printf("iload_0\n");
+            push_operand_stack((int32_t) current_frame->locals[0], current_frame);
+        } else if (*p == 0x1b) {
+            // iload_1
+            // push value to stack from local 1
+            p++;
+            printf("iload_1\n");
+            push_operand_stack((int32_t) current_frame->locals[1], current_frame);
+        } else if (*p == 0x2a) {
+            // aload_0
+            p++;
+            printf("aload_0\n");
+
+            push_operand_stack((int32_t) current_frame->locals[0], current_frame);
+        } else if (*p == 0x2b) {
+            // aload_1
+            p++;
+            printf("aload_1\n");
+
+            push_operand_stack((int32_t) current_frame->locals[1], current_frame);
+        } else if (*p == 0x3c) {
+            // istore_1
+            // pop value from stack and store it in local 1
+            p++;
+            printf("istore_1\n");
+            pop_operand_stack((int32_t *) &current_frame->locals[1], current_frame);
+        } else if (*p == 0x4c) {
+            // astore_1
+            p++;
+            printf("astore_1\n");
+
+            pop_operand_stack((int32_t *) &current_frame->locals[1], current_frame);
+        } else if (*p == 0x59) {
+            // dup
+            p++;
+            printf("dup\n");
+
+            pop_operand_stack(&operand1, current_frame);
+            push_operand_stack(operand1, current_frame);
+            push_operand_stack(operand1, current_frame);
         } else if (*p == 0x60) {
             // iadd
             p++;
@@ -928,23 +1156,6 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             pop_operand_stack(&operand1, current_frame);
             printf("isub: %d - %d\n", operand1, operand2);
             push_operand_stack((int32_t) (operand1 - operand2), current_frame);
-        } else if (*p == 0x1a) {
-            // iload_0
-            p++;
-            printf("iload_0\n");
-            push_operand_stack((int32_t) current_frame->locals[0], current_frame);
-        } else if (*p == 0x1b) {
-            // iload_1
-            // push value to stack from local 1
-            p++;
-            printf("iload_1\n");
-            push_operand_stack((int32_t) current_frame->locals[1], current_frame);
-        } else if (*p == 0x3c) {
-            // istore_1
-            // pop value from stack and store it in local 1
-            p++;
-            printf("istore_1\n");
-            pop_operand_stack((int32_t *) &current_frame->locals[1], current_frame);
         } else if (*p == 0xac) {
             // ireturn
             // pop value from the current frame and push to the invoker frame
@@ -952,7 +1163,7 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             pop_operand_stack((int32_t *) &operand1, current_frame);
             printf("ireturn %d\n", operand1);
             push_operand_stack((int32_t) operand1, prev_frame);
-            return 0;
+            break;
         } else if (*p == 0xb1) {
             // return
             p++;
@@ -962,8 +1173,10 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             // 0xb3: putstatic
             opcode = *p;
             p++;
-            cp_index = *p; p++;
-            cp_index = (cp_index << 8) | *p; p++;
+            cp_index = *p;
+            p++;
+            cp_index = (cp_index << 8) | *p;
+            p++;
 
             if (opcode == 0xb2) {
                 printf("getstatic %d\n", cp_index);
@@ -1023,11 +1236,134 @@ static int exec_method(struct method_info *current_method, struct code_attribute
                 pop_operand_stack(&operand1, current_frame);
                 *(field->data) = operand1;
             }
+        } else if (*p == 0xb4 || *p == 0xb5) {
+            // getfield (0xb4) or putfield (0xb5)
+            opcode = *p;
+            p++;
+            cp_index = *p;
+            p++;
+            cp_index = (cp_index << 8) | *p;
+            p++;
+            if (opcode == 0xb4) {
+                printf("getfield %d\n", cp_index);
+            } else {
+                printf("putfield %d\n", cp_index);
+            }
+
+            // field is expected to belong to current_class (6.5 putfield)
+            cp_fieldref = find_cp_fieldref(cp_index, current_class);
+            cp_name_and_type = find_cp_name_and_type(cp_fieldref->name_and_type_index, current_class);
+            read_utf8(buf, find_cp_utf8(cp_name_and_type->descriptor_index, current_class));
+            stack_unit = get_operand_stack_units(buf[0]);
+            read_utf8(buf, find_cp_utf8(cp_name_and_type->name_index, current_class));
+
+            // TODO: handle types other than int
+            if (stack_unit != 1) {
+                fprintf(stderr, "not implemented for stack_unit other than 1\n");
+                return -1;
+            }
+
+            if (opcode == 0xb4) {
+                // getfield
+                pop_operand_stack(&operand1, current_frame); // objectref
+
+                instance = get_instance(operand1);
+                if (instance == NULL) {
+                    fprintf(stderr, "failed to get_instance\n");
+                    return -1;
+                }
+
+                get_instance_field(instance, buf, &operand2);
+                push_operand_stack(operand2, current_frame);
+            } else {
+                // putfield
+                pop_operand_stack(&operand1, current_frame); // value
+                pop_operand_stack(&operand2, current_frame); // objectref
+
+                instance = get_instance(operand2);
+                if (instance == NULL) {
+                    fprintf(stderr, "failed to get_instance\n");
+                    return -1;
+                }
+
+                put_instance_field(instance, buf, &operand1);
+            }
+        } else if (*p == 0xb6 || *p == 0xb7) {
+            // invokevirtual (0xb6) or invokespecial (0xb7)
+            // TODO: follow spec (what should be checked respectively?)
+            opcode = *p;
+            p++;
+            cp_index = *p;
+            p++;
+            cp_index = (cp_index << 8) | *p;
+            p++;
+            if (opcode == 0xb6) {
+                printf("invokevirtual %d\n", cp_index);
+            } else {
+                printf("invokespecial %d\n", cp_index);
+            }
+
+            cp_methodref = find_cp_methodref(cp_index, current_class);
+            if (cp_methodref == NULL) {
+                fprintf(stderr, "Methodref is not found in constant pool\n");
+                return -1;
+            }
+
+            cp_class = find_cp_class(cp_methodref->class_index, current_class);
+            if (cp_class == NULL) {
+                fprintf(stderr, "Class is not found in constant pool\n");
+                return -1;
+            }
+
+            // check class having method
+            cp_utf8 = find_cp_utf8(cp_class->name_index, current_class);
+            if (cp_utf8 == NULL) {
+                fprintf(stderr, "Utf8 is not found in constant pool\n");
+                return -1;
+            }
+            read_utf8(buf, cp_utf8);
+            class2 = get_class(loader, buf);
+            if (class2 == NULL) {
+                fprintf(stderr, "class not found: %s\n", buf);
+                return -1;
+            }
+
+            cp_name_and_type = find_cp_name_and_type(cp_methodref->name_and_type_index, current_class);
+            if (cp_name_and_type == NULL) {
+                fprintf(stderr, "NameAndType is not found in constant pool\n");
+                return -1;
+            }
+
+            cp_utf8 = find_cp_utf8(cp_name_and_type->name_index, current_class);
+            if (cp_utf8 == NULL) {
+                fprintf(stderr, "Utf8 is not found in constant pool\n");
+                return -1;
+            }
+            read_utf8(buf, cp_utf8);
+
+            method2 = find_method(buf, class2);
+            if (method2 == NULL) {
+                fprintf(stderr, "not found method: %s\n", buf);
+                return -1;
+            }
+
+            code2 = get_code(method2, class2);
+            if (code2 == NULL) {
+                fprintf(stderr, "not found code\n");
+                return -1;
+            }
+
+            if (exec_method(method2, code2, current_frame, class2, loader) != 0) {
+                fprintf(stderr, "unexpected error while call method\n");
+                return -1;
+            }
         } else if (*p == 0xb8) {
             // invokestatic
             p++;
-            cp_index = *p; p++;
-            cp_index = (cp_index << 8) | *p; p++;
+            cp_index = *p;
+            p++;
+            cp_index = (cp_index << 8) | *p;
+            p++;
             printf("invokestatic %d\n", cp_index);
 
             cp_methodref = find_cp_methodref(cp_index, current_class);
@@ -1084,6 +1420,42 @@ static int exec_method(struct method_info *current_method, struct code_attribute
                 fprintf(stderr, "unexpected error while call method\n");
                 return -1;
             }
+        } else if (*p == 0xbb) {
+            // new
+            p++;
+            cp_index = *p;
+            p++;
+            cp_index = (cp_index << 8) | *p;
+            p++;
+            printf("new %d\n", cp_index);
+
+            // get class from constant pool
+            cp_class = find_cp_class(cp_index, current_class);
+            if (cp_class == NULL) {
+                fprintf(stderr, "Class is not found in constant pool\n");
+                return -1;
+            }
+            cp_utf8 = find_cp_utf8(cp_class->name_index, current_class);
+            if (cp_utf8 == NULL) {
+                fprintf(stderr, "Utf8 is not found in constant pool\n");
+                return -1;
+            }
+            read_utf8(buf, cp_utf8);
+            class2 = get_class(loader, buf);
+            if (class2 == NULL) {
+                fprintf(stderr, "class not found: %s\n", buf);
+                return -1;
+            }
+
+            // create instance
+            instance_index = create_instance(cp_class, class2, loader);
+            if (instance_index < 0) {
+                fprintf(stderr, "failed to create instance\n");
+                return -1;
+            }
+
+            // push reference to operand stack
+            push_operand_stack(instance_index, current_frame);
         } else {
             fprintf(stderr, "unknown inst\n");
             return -1;
@@ -1094,29 +1466,42 @@ static int exec_method(struct method_info *current_method, struct code_attribute
     return 0;
 }
 
-int run(char *class_name[], int len) {
+int run(char *user_class_name[], int user_class_len) {
     char *main_class_name;
     struct class_file *main_class;
     struct class_loader loader;
     struct method_info *method;
     struct code_attribute *code;
     struct frame *frame;
-    int retval;
+    int i, retval;
     char *c;
 
-    if (initialize_class_loader(&loader, class_name, len) < 0) {
+    static char *stdlib_class_name[] = {"java/lang/Object.class"};
+    static int stdlib_class_len = (sizeof(stdlib_class_name) / sizeof (stdlib_class_name[0]));
+
+    int class_len = user_class_len + stdlib_class_len;
+    char **class_name = calloc(class_len, sizeof(char *));
+    for (i = 0; i < class_len; i++) {
+        if (i < user_class_len) {
+            class_name[i] = user_class_name[i];
+        } else {
+            class_name[i] = stdlib_class_name[i - user_class_len];
+        }
+    }
+
+    if (initialize_class_loader(&loader, class_name, class_len) < 0) {
         fprintf(stderr, "failed to initiazlie class loader\n");
         return 1;
     }
 
     // Derive main class name without extension
     // e.g. First.class -> First
-    main_class_name = malloc(strlen(class_name[0]) + 1);
+    main_class_name = malloc(strlen(user_class_name[0]) + 1);
     if (main_class_name == NULL) {
         fprintf(stderr, "failed to malloc\n");
         return 1;
     }
-    strcpy(main_class_name, class_name[0]);
+    strcpy(main_class_name, user_class_name[0]);
     c = strchr(main_class_name, '.');
     if (c == NULL) {
         fprintf(stderr, "failed to get main class name\n");
