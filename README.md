@@ -31,6 +31,7 @@ Others:
 - [x] Support instance fields
 - [x] Initialization of instance
 - [ ] Support static fields other than Int (particularly object references)
+- [ ] Fix main function signature
 - [ ] Handle other types of method descriptor than Int (4.3.3)
 - [ ] Handle ReturnDescriptor (4.3.3)
 - [ ] Support Array
