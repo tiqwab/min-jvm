@@ -46,3 +46,4 @@ Others:
 - [ ] Lazy loading of class file
 - [ ] How to prepare stdlib?
   - In OpenJDK (and Oracle JDK), rt.jar provides stdlib?
+- [ ] Disable to execute main function having int as return type

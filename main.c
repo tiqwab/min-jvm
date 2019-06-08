@@ -19,6 +19,14 @@ static struct method_info *find_method(char *target_name, struct class_file *cla
 
 static struct constant_utf8_info *get_this_class(struct class_file *class);
 
+struct class_loader;
+struct native_loader;
+
+static int exec_method(struct method_info *current_method, struct code_attribute *current_code,
+                       struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader,
+                       struct native_loader *native_loader);
+
+
 //
 // Class Loader
 //
@@ -28,9 +36,7 @@ struct class_loader {
     struct class_file *classes;
 };
 
-static int exec_method(struct method_info *current_method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader);
-
-static int initialize_class(struct class_file *class, struct class_loader *loader) {
+static int initialize_class(struct class_file *class, struct class_loader *loader, struct native_loader *native_loader) {
     // find <clinit> method
     struct method_info *method = find_method("<clinit>", class);
     if (method == NULL) {
@@ -46,10 +52,10 @@ static int initialize_class(struct class_file *class, struct class_loader *loade
     struct frame *frame = initialize_frame(code->max_stack, code->max_locals);
 
     // exec <clinit>
-    return exec_method(method, code, frame, class, loader);
+    return exec_method(method, code, frame, class, loader, native_loader);
 }
 
-static int initialize_class_loader(struct class_loader *loader, char *class_names[], int len) {
+static int initialize_class_loader(struct class_loader *loader, char *class_names[], int len, struct native_loader *native_loader) {
     FILE *f;
     int i;
     struct class_file *class_files;
@@ -73,7 +79,7 @@ static int initialize_class_loader(struct class_loader *loader, char *class_name
         // After parsing, initialize class by executing `<clinit>`
         parse_class(&class_files[i], f);
 
-        if (initialize_class(&class_files[i], loader) != 0) {
+        if (initialize_class(&class_files[i], loader, native_loader) != 0) {
             return -1;
         }
 
@@ -111,6 +117,20 @@ struct class_file *get_class(struct class_loader *loader, char *name) {
 }
 
 int tear_down_class_loader(struct class_loader *loader) {
+    return 0;
+}
+
+//
+// Native Loader
+//
+
+struct native_loader {
+    void *handlers[1024];
+};
+
+static void exec_native_method(struct method_info *pInfo, struct frame *pFrame, struct native_loader *loader);
+
+static int initialize_native_loader(struct native_loader *loader) {
     return 0;
 }
 
@@ -868,6 +888,10 @@ static bool is_static_method(struct method_info *method) {
     return ((method->access_flags & ACC_STATIC) != 0);
 }
 
+static bool is_native_method(struct method_info *method) {
+    return ((method->access_flags & ACC_NATIVE) != 0);
+}
+
 /**
  * Return this class name representing by constant_utf8_info.
  * This should not return NULL.
@@ -1045,7 +1069,9 @@ int pop_operand_stack(int32_t *item, struct frame *frame) {
     return 0;
 }
 
-static int exec_method(struct method_info *current_method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader) {
+static int exec_method(struct method_info *current_method, struct code_attribute *current_code,
+        struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader,
+                struct native_loader *native_loader) {
     u_int8_t *p = current_code->code;
     u_int16_t current_code_len = current_code->code_length;
     struct method_descriptor current_descriptor;
@@ -1373,7 +1399,7 @@ static int exec_method(struct method_info *current_method, struct code_attribute
                 return -1;
             }
 
-            if (exec_method(method2, code2, current_frame, class2, loader) != 0) {
+            if (exec_method(method2, code2, current_frame, class2, loader, native_loader) != 0) {
                 fprintf(stderr, "unexpected error while call method\n");
                 return -1;
             }
@@ -1430,15 +1456,24 @@ static int exec_method(struct method_info *current_method, struct code_attribute
                 return -1;
             }
 
-            code2 = get_code(method2, class2);
-            if (code2 == NULL) {
-                fprintf(stderr, "not found code\n");
+            if (!is_static_method(method2)) {
+                fprintf(stderr, "this is not static method\n");
                 return -1;
             }
 
-            if (exec_method(method2, code2, current_frame, class2, loader) != 0) {
-                fprintf(stderr, "unexpected error while call method\n");
-                return -1;
+            if (is_native_method(method2)) {
+                exec_native_method(method2, current_frame, (struct native_loader *) NULL);
+            } else {
+                code2 = get_code(method2, class2);
+                if (code2 == NULL) {
+                    fprintf(stderr, "not found code\n");
+                    return -1;
+                }
+
+                if (exec_method(method2, code2, current_frame, class2, loader, native_loader) != 0) {
+                    fprintf(stderr, "unexpected error while call method\n");
+                    return -1;
+                }
             }
         } else if (*p == 0xbb) {
             // new
@@ -1486,17 +1521,27 @@ static int exec_method(struct method_info *current_method, struct code_attribute
     return 0;
 }
 
+static void exec_native_method(struct method_info *method, struct frame *frame, struct native_loader *loader) {
+
+}
+
 int run(char *user_class_name[], int user_class_len) {
     char *main_class_name;
     struct class_file *main_class;
     struct class_loader loader;
+    struct native_loader native_loader;
     struct method_info *method;
     struct code_attribute *code;
     struct frame *frame;
     int i, retval;
     char *c;
 
-    static char *stdlib_class_name[] = {"java/lang/Object.class"};
+    if (initialize_native_loader(&native_loader) < 0) {
+        fprintf(stderr, "failed to initialize native loader\n");
+        return 1;
+    }
+
+    static char *stdlib_class_name[] = {"java/lang/Object.class", "java/lang/System.class"};
     static int stdlib_class_len = (sizeof(stdlib_class_name) / sizeof (stdlib_class_name[0]));
 
     int class_len = user_class_len + stdlib_class_len;
@@ -1509,7 +1554,7 @@ int run(char *user_class_name[], int user_class_len) {
         }
     }
 
-    if (initialize_class_loader(&loader, class_name, class_len) < 0) {
+    if (initialize_class_loader(&loader, class_name, class_len, &native_loader) < 0) {
         fprintf(stderr, "failed to initiazlie class loader\n");
         return 1;
     }
@@ -1548,7 +1593,7 @@ int run(char *user_class_name[], int user_class_len) {
     }
 
     frame = initialize_frame(1, 0);
-    if (exec_method(method, code, frame, main_class, &loader) != 0) {
+    if (exec_method(method, code, frame, main_class, &loader, &native_loader) != 0) {
         fprintf(stderr, "failed to exec main\n");
         return 1;
     }

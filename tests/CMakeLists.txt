@@ -17,6 +17,7 @@ foreach(name IN ITEMS
         create_instance
         instance_fields
         static_reference_field
+        just-return
         )
     add_min_jvm_executable(${name})
     add_test(NAME test_${name} COMMAND $<TARGET_FILE:test_${name}>)
@@ -34,6 +35,7 @@ foreach(name IN ITEMS
         CreateInstance.class
         InstanceFields.class
         StaticReferenceField.class
+        JustReturn.class
         )
     configure_file(${name} . COPYONLY)
 endforeach()
