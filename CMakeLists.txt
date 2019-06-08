@@ -5,7 +5,7 @@ project(min_jvm C)
 
 set(CMAKE_C_STANDARD 99)
 
-add_compile_options("-Wall")
+add_compile_options("-Wall" "-g")
 
 add_library(min_jvm main.c main.h)
 

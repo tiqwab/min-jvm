@@ -118,11 +118,14 @@ int tear_down_class_loader(struct class_loader *loader) {
 // Instance Creation
 //
 
-#define FIELD_TYPE_INT 1
+#define FIELD_DESCRIPTOR_INT 'I'
+#define FIELD_DESCRIPTOR_OBJECT 'L'
+
+#define REFERENCE_NULL -1
 
 struct class_instance_field {
     char *name;
-    int typ;
+    char *descriptor;
     void *data;
 };
 
@@ -146,10 +149,15 @@ static int create_instance_field(struct class_instance_field **field, char *name
     (*field)->name = field_name;
 
     switch (descriptor[0]) {
-        case 'I':
-            (*field)->typ = FIELD_TYPE_INT;
+        case FIELD_DESCRIPTOR_INT:
+            (*field)->descriptor = descriptor;
             (*field)->data = malloc(sizeof(u_int32_t));
             *((u_int32_t *) (*field)->data) = 0;
+            break;
+        case FIELD_DESCRIPTOR_OBJECT:
+            (*field)->descriptor = descriptor;
+            (*field)->data = malloc(sizeof(int));
+            *((int *) (*field)->data) = REFERENCE_NULL;
             break;
         default:
             fprintf(stderr, "not yet implemented for %s in create_instance_field\n", descriptor);
@@ -211,10 +219,13 @@ static int get_instance_field(struct class_instance *instance, const char *name,
     for (i = 0; i < instance->field_num; i++) {
         field = instance->fields[i];
         if (strcmp(field->name, name) == 0) {
-            switch (field->typ) {
-                case FIELD_TYPE_INT:
+            switch (field->descriptor[0]) {
+                case FIELD_DESCRIPTOR_INT:
                     *((int *) value) = *((int *) field->data);
                     return 0;
+                case FIELD_DESCRIPTOR_OBJECT:
+                    fprintf(stderr, "not yet implemented for FIELD_DESCRIPTOR_OBJECT\n");
+                    return -1;
                 default:
                     return -1;
             }
@@ -231,10 +242,13 @@ static int put_instance_field(struct class_instance *instance, const char *name,
     for (i = 0; i < instance->field_num; i++) {
         field = instance->fields[i];
         if (strcmp(field->name, name) == 0) {
-            switch (field->typ) {
-                case FIELD_TYPE_INT:
+            switch (field->descriptor[0]) {
+                case FIELD_DESCRIPTOR_INT:
                     *((int *) field->data) = *((int *) value);
                     return 0;
+                case FIELD_DESCRIPTOR_OBJECT:
+                    fprintf(stderr, "not yet implemented for FIELD_DESCRIPTOR_OBJECT\n");
+                    return -1;
                 default:
                     return -1;
             }
@@ -1273,7 +1287,10 @@ static int exec_method(struct method_info *current_method, struct code_attribute
                     return -1;
                 }
 
-                get_instance_field(instance, buf, &operand2);
+                if (get_instance_field(instance, buf, &operand2) < 0) {
+                    fprintf(stderr, "failed to get_instance_field\n");
+                    return -1;
+                }
                 push_operand_stack(operand2, current_frame);
             } else {
                 // putfield
@@ -1286,7 +1303,10 @@ static int exec_method(struct method_info *current_method, struct code_attribute
                     return -1;
                 }
 
-                put_instance_field(instance, buf, &operand1);
+                if (put_instance_field(instance, buf, &operand1) < 0) {
+                    fprintf(stderr, "failed to put_instance_field\n");
+                    return -1;
+                }
             }
         } else if (*p == 0xb6 || *p == 0xb7) {
             // invokevirtual (0xb6) or invokespecial (0xb7)
@@ -1482,10 +1502,10 @@ int run(char *user_class_name[], int user_class_len) {
     int class_len = user_class_len + stdlib_class_len;
     char **class_name = calloc(class_len, sizeof(char *));
     for (i = 0; i < class_len; i++) {
-        if (i < user_class_len) {
-            class_name[i] = user_class_name[i];
+        if (i < stdlib_class_len) {
+            class_name[i] = stdlib_class_name[i];
         } else {
-            class_name[i] = stdlib_class_name[i - user_class_len];
+            class_name[i] = user_class_name[i - stdlib_class_len];
         }
     }
 
