@@ -1,6 +1,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <dlfcn.h>
 #include "main.h"
 
 static int read_utf8(char *str, struct constant_utf8_info *cp);
@@ -124,13 +125,24 @@ int tear_down_class_loader(struct class_loader *loader) {
 // Native Loader
 //
 
+#define LIB_JAVA "libjava.so"
+
 struct native_loader {
-    void *handlers[1024];
+    void *handler;
 };
 
 static void exec_native_method(struct method_info *pInfo, struct frame *pFrame, struct native_loader *loader);
 
 static int initialize_native_loader(struct native_loader *loader) {
+    void *handler;
+
+    handler = dlopen(LIB_JAVA, RTLD_LAZY);
+    if (handler == NULL) {
+        fprintf(stderr, "failed to load %s\n", LIB_JAVA);
+        return -1;
+    }
+
+    loader->handler = handler;
     return 0;
 }
 
@@ -1462,7 +1474,7 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             }
 
             if (is_native_method(method2)) {
-                exec_native_method(method2, current_frame, (struct native_loader *) NULL);
+                exec_native_method(method2, current_frame, native_loader);
             } else {
                 code2 = get_code(method2, class2);
                 if (code2 == NULL) {
@@ -1522,7 +1534,17 @@ static int exec_method(struct method_info *current_method, struct code_attribute
 }
 
 static void exec_native_method(struct method_info *method, struct frame *frame, struct native_loader *loader) {
+    typedef void (*Func) (int);
+    Func f;
 
+    f = (Func) dlsym(loader->handler, "halt0");
+
+    if (f != NULL) {
+        printf("found halt0\n");
+        f(123);
+    } else {
+        printf("not found halt0\n");
+    }
 }
 
 int run(char *user_class_name[], int user_class_len) {

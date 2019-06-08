@@ -21,6 +21,7 @@ foreach(name IN ITEMS
         )
     add_min_jvm_executable(${name})
     add_test(NAME test_${name} COMMAND $<TARGET_FILE:test_${name}>)
+    set_property(TEST test_${name} APPEND PROPERTY ENVIRONMENT LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/nativelib:$ENV{LD_LIBRARY_PATH})
 endforeach()
 
 foreach(name IN ITEMS
