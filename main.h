@@ -211,4 +211,6 @@ int pop_operand_stack(int32_t *item, struct frame *frame);
  */
 int run(char *user_class_name[], int user_class_len);
 
+void request_shutdown(int status);
+
 #endif //MIN_JVM_MAIN_H

@@ -33,8 +33,8 @@ Others:
 - [ ] Support static fields other than Int (particularly object references)
   - [x] object reference
   - [ ] string?
-- [ ] Introduce System.exit
-- [ ] Fix main function signature
+- [x] Introduce System.exit
+- [x] Fix main function signature
 - [ ] Try running codes compiled from Scala?
 - [ ] String literal
 - [ ] Create Class object (and let it manage static fields)
@@ -46,3 +46,4 @@ Others:
 - [ ] Lazy loading of class file
 - [ ] How to prepare stdlib?
   - In OpenJDK (and Oracle JDK), rt.jar provides stdlib?
+- [ ] Disable to execute main function having int as return type

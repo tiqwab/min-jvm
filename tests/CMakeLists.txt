@@ -17,9 +17,11 @@ foreach(name IN ITEMS
         create_instance
         instance_fields
         static_reference_field
+        just_return
         )
     add_min_jvm_executable(${name})
     add_test(NAME test_${name} COMMAND $<TARGET_FILE:test_${name}>)
+    set_property(TEST test_${name} APPEND PROPERTY ENVIRONMENT LD_LIBRARY_PATH=${CMAKE_BINARY_DIR}/nativelib:$ENV{LD_LIBRARY_PATH})
 endforeach()
 
 foreach(name IN ITEMS
@@ -34,6 +36,7 @@ foreach(name IN ITEMS
         CreateInstance.class
         InstanceFields.class
         StaticReferenceField.class
+        JustReturn.class
         )
     configure_file(${name} . COPYONLY)
 endforeach()

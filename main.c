@@ -1,6 +1,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <dlfcn.h>
+#include <unistd.h>
 #include "main.h"
 
 static int read_utf8(char *str, struct constant_utf8_info *cp);
@@ -19,6 +21,14 @@ static struct method_info *find_method(char *target_name, struct class_file *cla
 
 static struct constant_utf8_info *get_this_class(struct class_file *class);
 
+struct class_loader;
+struct native_loader;
+
+static int exec_method(struct method_info *current_method, struct code_attribute *current_code,
+                       struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader,
+                       struct native_loader *native_loader);
+
+
 //
 // Class Loader
 //
@@ -28,9 +38,7 @@ struct class_loader {
     struct class_file *classes;
 };
 
-static int exec_method(struct method_info *current_method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader);
-
-static int initialize_class(struct class_file *class, struct class_loader *loader) {
+static int initialize_class(struct class_file *class, struct class_loader *loader, struct native_loader *native_loader) {
     // find <clinit> method
     struct method_info *method = find_method("<clinit>", class);
     if (method == NULL) {
@@ -46,10 +54,10 @@ static int initialize_class(struct class_file *class, struct class_loader *loade
     struct frame *frame = initialize_frame(code->max_stack, code->max_locals);
 
     // exec <clinit>
-    return exec_method(method, code, frame, class, loader);
+    return exec_method(method, code, frame, class, loader, native_loader);
 }
 
-static int initialize_class_loader(struct class_loader *loader, char *class_names[], int len) {
+static int initialize_class_loader(struct class_loader *loader, char *class_names[], int len, struct native_loader *native_loader) {
     FILE *f;
     int i;
     struct class_file *class_files;
@@ -73,7 +81,7 @@ static int initialize_class_loader(struct class_loader *loader, char *class_name
         // After parsing, initialize class by executing `<clinit>`
         parse_class(&class_files[i], f);
 
-        if (initialize_class(&class_files[i], loader) != 0) {
+        if (initialize_class(&class_files[i], loader, native_loader) != 0) {
             return -1;
         }
 
@@ -111,6 +119,31 @@ struct class_file *get_class(struct class_loader *loader, char *name) {
 }
 
 int tear_down_class_loader(struct class_loader *loader) {
+    return 0;
+}
+
+//
+// Native Loader
+//
+
+#define LIB_JAVA "libjava.so"
+
+struct native_loader {
+    void *handler;
+};
+
+static int exec_native_method(struct method_info *pInfo, struct frame *pFrame, struct class_file *class, struct native_loader *loader);
+
+static int initialize_native_loader(struct native_loader *loader) {
+    void *handler;
+
+    handler = dlopen(LIB_JAVA, RTLD_LAZY);
+    if (handler == NULL) {
+        fprintf(stderr, "failed to load %s\n", LIB_JAVA);
+        return -1;
+    }
+
+    loader->handler = handler;
     return 0;
 }
 
@@ -868,6 +901,10 @@ static bool is_static_method(struct method_info *method) {
     return ((method->access_flags & ACC_STATIC) != 0);
 }
 
+static bool is_native_method(struct method_info *method) {
+    return ((method->access_flags & ACC_NATIVE) != 0);
+}
+
 /**
  * Return this class name representing by constant_utf8_info.
  * This should not return NULL.
@@ -1045,7 +1082,11 @@ int pop_operand_stack(int32_t *item, struct frame *frame) {
     return 0;
 }
 
-static int exec_method(struct method_info *current_method, struct code_attribute *current_code, struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader) {
+static int status = 0;
+
+static int exec_method(struct method_info *current_method, struct code_attribute *current_code,
+        struct frame *prev_frame, struct class_file *current_class, struct class_loader *loader,
+                struct native_loader *native_loader) {
     u_int8_t *p = current_code->code;
     u_int16_t current_code_len = current_code->code_length;
     struct method_descriptor current_descriptor;
@@ -1070,12 +1111,12 @@ static int exec_method(struct method_info *current_method, struct code_attribute
     struct frame *current_frame = initialize_frame(current_code->max_stack, current_code->max_locals);
     if (current_frame == NULL) {
         fprintf(stderr, "failed to prepare frame\n");
-        return -1;
+        return 1;
     }
 
     if (get_method_descriptor(&current_descriptor, current_method, current_class) != 0) {
         fprintf(stderr, "failed to get descriptor\n");
-        return -1;
+        return 1;
     }
 
     i = 0;
@@ -1091,7 +1132,7 @@ static int exec_method(struct method_info *current_method, struct code_attribute
     }
 
     // interpret code
-    while (p < current_code->code + current_code_len) {
+    while (p < current_code->code + current_code_len && status == 0) {
         if (*p == 0x02) {
             // iconst_m1
             p++;
@@ -1182,6 +1223,7 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             // return
             p++;
             printf("return\n");
+            break;
         } else if (*p == 0xb2 || *p == 0xb3) {
             // 0xb2: getstatic
             // 0xb3: putstatic
@@ -1201,45 +1243,45 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             cp_fieldref = find_cp_fieldref(cp_index, current_class);
             if (cp_fieldref == NULL) {
                 fprintf(stderr, "Fieldref is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
 
             cp_class = find_cp_class(cp_fieldref->class_index, current_class);
             if (cp_class == NULL) {
                 fprintf(stderr, "Class is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
 
             // check class having field
             cp_utf8 = find_cp_utf8(cp_class->name_index, current_class);
             if (cp_utf8 == NULL) {
                 fprintf(stderr, "Utf8 is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
             read_utf8(buf, cp_utf8);
             class2 = get_class(loader, buf);
             if (class2 == NULL) {
                 fprintf(stderr, "class not found: %s\n", buf);
-                return -1;
+                status = 1;
             }
 
             cp_name_and_type = find_cp_name_and_type(cp_fieldref->name_and_type_index, current_class);
             if (cp_name_and_type == NULL) {
                 fprintf(stderr, "NameAndType is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
 
             cp_utf8 = find_cp_utf8(cp_name_and_type->name_index, current_class);
             if (cp_utf8 == NULL) {
                 fprintf(stderr, "Utf8 is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
             read_utf8(buf, cp_utf8);
 
             field = find_field(buf, class2);
             if (field == NULL) {
                 fprintf(stderr, "field %s is not found.\n", buf);
-                return -1;
+                status = 1;
             }
 
             if (opcode == 0xb2) {
@@ -1274,7 +1316,7 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             // TODO: handle types other than int
             if (stack_unit != 1) {
                 fprintf(stderr, "not implemented for stack_unit other than 1\n");
-                return -1;
+                status = 1;
             }
 
             if (opcode == 0xb4) {
@@ -1284,12 +1326,12 @@ static int exec_method(struct method_info *current_method, struct code_attribute
                 instance = get_instance(operand1);
                 if (instance == NULL) {
                     fprintf(stderr, "failed to get_instance\n");
-                    return -1;
+                    status = 1;
                 }
 
                 if (get_instance_field(instance, buf, &operand2) < 0) {
                     fprintf(stderr, "failed to get_instance_field\n");
-                    return -1;
+                    status = 1;
                 }
                 push_operand_stack(operand2, current_frame);
             } else {
@@ -1300,12 +1342,12 @@ static int exec_method(struct method_info *current_method, struct code_attribute
                 instance = get_instance(operand2);
                 if (instance == NULL) {
                     fprintf(stderr, "failed to get_instance\n");
-                    return -1;
+                    status = 1;
                 }
 
                 if (put_instance_field(instance, buf, &operand1) < 0) {
                     fprintf(stderr, "failed to put_instance_field\n");
-                    return -1;
+                    status = 1;
                 }
             }
         } else if (*p == 0xb6 || *p == 0xb7) {
@@ -1326,57 +1368,54 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             cp_methodref = find_cp_methodref(cp_index, current_class);
             if (cp_methodref == NULL) {
                 fprintf(stderr, "Methodref is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
 
             cp_class = find_cp_class(cp_methodref->class_index, current_class);
             if (cp_class == NULL) {
                 fprintf(stderr, "Class is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
 
             // check class having method
             cp_utf8 = find_cp_utf8(cp_class->name_index, current_class);
             if (cp_utf8 == NULL) {
                 fprintf(stderr, "Utf8 is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
             read_utf8(buf, cp_utf8);
             class2 = get_class(loader, buf);
             if (class2 == NULL) {
                 fprintf(stderr, "class not found: %s\n", buf);
-                return -1;
+                status = 1;
             }
 
             cp_name_and_type = find_cp_name_and_type(cp_methodref->name_and_type_index, current_class);
             if (cp_name_and_type == NULL) {
                 fprintf(stderr, "NameAndType is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
 
             cp_utf8 = find_cp_utf8(cp_name_and_type->name_index, current_class);
             if (cp_utf8 == NULL) {
                 fprintf(stderr, "Utf8 is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
             read_utf8(buf, cp_utf8);
 
             method2 = find_method(buf, class2);
             if (method2 == NULL) {
                 fprintf(stderr, "not found method: %s\n", buf);
-                return -1;
+                status = 1;
             }
 
             code2 = get_code(method2, class2);
             if (code2 == NULL) {
                 fprintf(stderr, "not found code\n");
-                return -1;
+                status = 1;
             }
 
-            if (exec_method(method2, code2, current_frame, class2, loader) != 0) {
-                fprintf(stderr, "unexpected error while call method\n");
-                return -1;
-            }
+            status = exec_method(method2, code2, current_frame, class2, loader, native_loader);
         } else if (*p == 0xb8) {
             // invokestatic
             p++;
@@ -1389,56 +1428,61 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             cp_methodref = find_cp_methodref(cp_index, current_class);
             if (cp_methodref == NULL) {
                 fprintf(stderr, "Methodref is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
 
             cp_class = find_cp_class(cp_methodref->class_index, current_class);
             if (cp_class == NULL) {
                 fprintf(stderr, "Class is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
 
             // check class having method
             cp_utf8 = find_cp_utf8(cp_class->name_index, current_class);
             if (cp_utf8 == NULL) {
                 fprintf(stderr, "Utf8 is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
             read_utf8(buf, cp_utf8);
             class2 = get_class(loader, buf);
             if (class2 == NULL) {
                 fprintf(stderr, "class not found: %s\n", buf);
-                return -1;
+                status = 1;
             }
 
             cp_name_and_type = find_cp_name_and_type(cp_methodref->name_and_type_index, current_class);
             if (cp_name_and_type == NULL) {
                 fprintf(stderr, "NameAndType is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
 
             cp_utf8 = find_cp_utf8(cp_name_and_type->name_index, current_class);
             if (cp_utf8 == NULL) {
                 fprintf(stderr, "Utf8 is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
             read_utf8(buf, cp_utf8);
 
             method2 = find_method(buf, class2);
             if (method2 == NULL) {
                 fprintf(stderr, "not found method: %s\n", buf);
-                return -1;
+                status = 1;
             }
 
-            code2 = get_code(method2, class2);
-            if (code2 == NULL) {
-                fprintf(stderr, "not found code\n");
-                return -1;
+            if (!is_static_method(method2)) {
+                fprintf(stderr, "this is not static method\n");
+                status = 1;
             }
 
-            if (exec_method(method2, code2, current_frame, class2, loader) != 0) {
-                fprintf(stderr, "unexpected error while call method\n");
-                return -1;
+            if (is_native_method(method2)) {
+                status = exec_native_method(method2, current_frame, class2, native_loader);
+            } else {
+                code2 = get_code(method2, class2);
+                if (code2 == NULL) {
+                    fprintf(stderr, "not found code\n");
+                    status = 1;
+                }
+                status = exec_method(method2, code2, current_frame, class2, loader, native_loader);
             }
         } else if (*p == 0xbb) {
             // new
@@ -1453,50 +1497,115 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             cp_class = find_cp_class(cp_index, current_class);
             if (cp_class == NULL) {
                 fprintf(stderr, "Class is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
             cp_utf8 = find_cp_utf8(cp_class->name_index, current_class);
             if (cp_utf8 == NULL) {
                 fprintf(stderr, "Utf8 is not found in constant pool\n");
-                return -1;
+                status = 1;
             }
             read_utf8(buf, cp_utf8);
             class2 = get_class(loader, buf);
             if (class2 == NULL) {
                 fprintf(stderr, "class not found: %s\n", buf);
-                return -1;
+                status = 1;
             }
 
             // create instance
             instance_index = create_instance(cp_class, class2, loader);
             if (instance_index < 0) {
                 fprintf(stderr, "failed to create instance\n");
-                return -1;
+                status = 1;
             }
 
             // push reference to operand stack
             push_operand_stack(instance_index, current_frame);
         } else {
             fprintf(stderr, "unknown inst\n");
-            return -1;
+            status = 1;
         }
     }
 
     free_frame(current_frame);
-    return 0;
+    return status;
+}
+
+/**
+ * Replace char a in str to char b.
+ */
+static void strreplace(char *str, size_t len, char a, char b) {
+    int i;
+
+    for (i = 0; i < len; i++) {
+        if (str[i] == a) {
+            str[i] = b;
+        }
+    }
+}
+
+static void generate_native_method_name(char *native_method_name, char *class_name, char *method_name) {
+    char *replaced_class_name;
+    int class_name_len = strlen(class_name);
+
+    replaced_class_name = malloc(class_name_len + 1);
+    strncpy(replaced_class_name, class_name, class_name_len);
+
+    strreplace(replaced_class_name, class_name_len, '/', '_');
+    sprintf(native_method_name, "Java_%s_%s", replaced_class_name, method_name);
+
+    free(replaced_class_name);
+}
+
+static int exec_native_method(struct method_info *method, struct frame *frame, struct class_file *class, struct native_loader *loader) {
+    typedef void (*Func) (void *, void *, int);
+    Func f;
+    struct constant_utf8_info *cp_utf8;
+    struct constant_class_info *cp_class;
+    char method_name[1024], class_name[1024], native_method_name[1024];
+    int operand;
+
+    cp_utf8 = find_cp_utf8(method->name_index, class);
+    read_utf8(method_name, cp_utf8);
+
+    cp_class = find_cp_class(class->this_class, class);
+    cp_utf8 = find_cp_utf8(cp_class->name_index, class);
+    read_utf8(class_name, cp_utf8);
+
+    generate_native_method_name(native_method_name, class_name, method_name);
+
+    printf("%s\n", native_method_name);
+
+    f = (Func) dlsym(loader->handler, native_method_name);
+
+    pop_operand_stack(&operand, frame);
+
+    if (f != NULL) {
+        f(NULL, NULL, operand);
+    } else {
+        printf("not found native method: %s\n", native_method_name);
+        status = 1;
+    }
+
+    return status;
 }
 
 int run(char *user_class_name[], int user_class_len) {
     char *main_class_name;
     struct class_file *main_class;
     struct class_loader loader;
+    struct native_loader native_loader;
     struct method_info *method;
     struct code_attribute *code;
     struct frame *frame;
     int i, retval;
     char *c;
 
-    static char *stdlib_class_name[] = {"java/lang/Object.class"};
+    if (initialize_native_loader(&native_loader) < 0) {
+        fprintf(stderr, "failed to initialize native loader\n");
+        return 1;
+    }
+
+    static char *stdlib_class_name[] = {"java/lang/Object.class", "java/lang/System.class"};
     static int stdlib_class_len = (sizeof(stdlib_class_name) / sizeof (stdlib_class_name[0]));
 
     int class_len = user_class_len + stdlib_class_len;
@@ -1509,7 +1618,7 @@ int run(char *user_class_name[], int user_class_len) {
         }
     }
 
-    if (initialize_class_loader(&loader, class_name, class_len) < 0) {
+    if (initialize_class_loader(&loader, class_name, class_len, &native_loader) < 0) {
         fprintf(stderr, "failed to initiazlie class loader\n");
         return 1;
     }
@@ -1548,13 +1657,18 @@ int run(char *user_class_name[], int user_class_len) {
     }
 
     frame = initialize_frame(1, 0);
-    if (exec_method(method, code, frame, main_class, &loader) != 0) {
-        fprintf(stderr, "failed to exec main\n");
-        return 1;
+    if ((status = exec_method(method, code, frame, main_class, &loader, &native_loader)) != 0) {
+        retval = status;
+    } else {
+        pop_operand_stack((int32_t *) &retval, frame);
     }
-    pop_operand_stack((int32_t *) &retval, frame);
 
     tear_down_class_loader(&loader);
 
     return retval;
+}
+
+void request_shutdown(int s) {
+    printf("set status as %d\n", s);
+    status = s;
 }
