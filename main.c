@@ -1587,7 +1587,6 @@ static int exec_native_method(struct method_info *method, struct frame *frame, s
     pop_operand_stack(&operand, frame);
 
     if (f != NULL) {
-        printf("found native method: %s\n", native_method_name);
         f(NULL, NULL, operand);
     } else {
         printf("not found native method: %s\n", native_method_name);

@@ -15,6 +15,5 @@ typedef int32_t jint;
 typedef jobject jclass;
 
 JNIEXPORT void JNICALL Java_java_lang_System_halt0(JNIEnv *env, jclass class, jint status) {
-    printf("called halt0 with %d\n", status);
     request_shutdown(status);
 }
