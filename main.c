@@ -1415,9 +1415,7 @@ static int exec_method(struct method_info *current_method, struct code_attribute
                 status = 1;
             }
 
-            if ((status = exec_method(method2, code2, current_frame, class2, loader, native_loader)) != 0) {
-                fprintf(stderr, "unexpected error while call method\n");
-            }
+            status = exec_method(method2, code2, current_frame, class2, loader, native_loader);
         } else if (*p == 0xb8) {
             // invokestatic
             p++;
@@ -1477,19 +1475,14 @@ static int exec_method(struct method_info *current_method, struct code_attribute
             }
 
             if (is_native_method(method2)) {
-                if ((status = exec_native_method(method2, current_frame, class2, native_loader)) != 0) {
-                    fprintf(stderr, "failed to execute native method\n");
-                }
+                status = exec_native_method(method2, current_frame, class2, native_loader);
             } else {
                 code2 = get_code(method2, class2);
                 if (code2 == NULL) {
                     fprintf(stderr, "not found code\n");
                     status = 1;
                 }
-
-                if ((status = exec_method(method2, code2, current_frame, class2, loader, native_loader)) != 0) {
-                    fprintf(stderr, "unexpected error while call method\n");
-                }
+                status = exec_method(method2, code2, current_frame, class2, loader, native_loader);
             }
         } else if (*p == 0xbb) {
             // new
